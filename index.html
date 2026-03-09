@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e0e0e">
 <title>FUEL — Calorie Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.18.6/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 <style>
   :root {
     --bg: #0e0e0e;
@@ -1291,12 +1291,12 @@
 
   // ─── CAMERA SCANNER ───────────────────────────────────────────
   let codeReader = null;
+  let scannerControls = null;
   let scannerActive = false;
 
   async function openCameraScanner() {
     const overlay = document.getElementById('camera-overlay');
 
-    // Check for ZXing availability
     if (typeof ZXing === 'undefined') {
       showToast('Scanner library not loaded. Enter barcode manually.');
       return;
@@ -1311,14 +1311,14 @@
 
       const videoEl = document.getElementById('camera-video');
 
-      // Prefer back camera on mobile
-      const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+      // Prefer back/environment camera on mobile
+      const devices = await codeReader.getVideoInputDevices();
       let deviceId = undefined;
       if (devices.length > 1) {
-        const back = devices.find(d =>
-          /back|rear|environment/i.test(d.label)
-        );
+        const back = devices.find(d => /back|rear|environment/i.test(d.label));
         deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
+      } else if (devices.length === 1) {
+        deviceId = devices[0].deviceId;
       }
 
       codeReader.decodeFromVideoDevice(deviceId, videoEl, (result, err) => {
@@ -1326,10 +1326,8 @@
         if (result) {
           const code = result.getText().replace(/\D/g, '');
           if (code.length >= 8) {
-            // Flash detection UI
             document.getElementById('camera-detected').classList.add('show');
             navigator.vibrate && navigator.vibrate(100);
-
             setTimeout(() => {
               closeCameraScanner();
               document.getElementById('barcode-input').value = code;
@@ -1355,7 +1353,6 @@
       codeReader = null;
     }
     document.getElementById('camera-overlay').classList.remove('active');
-    // Stop all video tracks
     const video = document.getElementById('camera-video');
     if (video.srcObject) {
       video.srcObject.getTracks().forEach(t => t.stop());
