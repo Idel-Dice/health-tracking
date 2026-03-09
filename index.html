@@ -392,6 +392,81 @@
 
   .macro-inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
+  /* ── FOOD SEARCH ─────────────────────────────────────── */
+  .food-search-wrap { position: relative; }
+
+  .food-search-row { display: flex; gap: 8px; }
+
+  .food-search-row input { flex: 1; }
+
+  .search-go-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 13px 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    cursor: pointer;
+    white-space: nowrap; flex-shrink: 0;
+    touch-action: manipulation;
+    transition: all 0.2s;
+  }
+  .search-go-btn:active { border-color: var(--accent); color: var(--accent); }
+  .search-go-btn:disabled { opacity: 0.4; }
+
+  .food-search-results {
+    display: none;
+    flex-direction: column;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .food-search-results.visible { display: flex; }
+
+  .search-result-item {
+    padding: 11px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .search-result-item:last-child { border-bottom: none; }
+  .search-result-item:active, .search-result-item:hover { background: var(--surface); }
+
+  .sri-name {
+    font-size: 0.88rem;
+    font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sri-meta {
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    display: flex; gap: 10px;
+  }
+  .sri-meta span { white-space: nowrap; }
+
+  .search-status {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    padding: 10px 14px;
+    text-align: center;
+  }
+
+  .food-autofill-notice {
+    display: none;
+    font-size: 0.68rem;
+    color: var(--accent);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+  .food-autofill-notice.visible { display: block; }
+
   .primary-btn {
     background: var(--accent);
     color: #0e0e0e;
@@ -880,6 +955,23 @@
         <div class="card">
           <div class="card-title">Add Food</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
+
+            <div class="form-group">
+              <label class="form-label">Search Food Database</label>
+              <div class="food-search-wrap">
+                <div class="food-search-row">
+                  <input type="text" id="food-search-input" placeholder="e.g. banana, grilled chicken…"
+                    autocomplete="off"
+                    oninput="onFoodSearchInput()"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();searchFoodDB();}"/>
+                  <button class="search-go-btn" id="search-go-btn" onclick="searchFoodDB()">Search</button>
+                </div>
+                <div class="food-search-results" id="food-search-results"></div>
+              </div>
+            </div>
+
+            <div class="food-autofill-notice" id="food-autofill-notice">✓ Nutritional data auto-filled — adjust if needed</div>
+
             <div class="form-group">
               <label class="form-label">Food Name</label>
               <input type="text" id="food-name" placeholder="e.g. Chicken Breast" autocomplete="off"/>
@@ -1099,6 +1191,7 @@
     ['food-name','food-cals','food-protein','food-carbs','food-fat'].forEach(id=>{
       document.getElementById(id).value='';
     });
+    document.getElementById('food-autofill-notice').classList.remove('visible');
 
     // Jump to today tab
     showTab('today', document.querySelector('.nav-btn'));
@@ -1287,6 +1380,91 @@
     document.getElementById('barcode-result').classList.toggle('visible',state==='result');
     document.getElementById('lookup-btn').disabled=(state==='loading');
     if(state==='error') document.getElementById('barcode-error').textContent=msg;
+  }
+
+  // ─── FOOD DATABASE SEARCH ─────────────────────────────────────
+  let foodSearchTimer = null;
+
+  function onFoodSearchInput() {
+    clearTimeout(foodSearchTimer);
+    const q = document.getElementById('food-search-input').value.trim();
+    if (!q) {
+      hideFoodResults();
+      return;
+    }
+    // Debounce 500ms for auto-search, or user can hit Search
+    foodSearchTimer = setTimeout(() => searchFoodDB(), 500);
+  }
+
+  async function searchFoodDB() {
+    const q = document.getElementById('food-search-input').value.trim();
+    if (!q) return;
+
+    const resultsEl = document.getElementById('food-search-results');
+    resultsEl.classList.add('visible');
+    resultsEl.innerHTML = '<div class="search-status">Searching…</div>';
+
+    try {
+      // Use Open Food Facts search — free, no key, huge database
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments,serving_quantity,serving_quantity_unit,quantity_unit`;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      const products = (json.products || []).filter(p =>
+        p.product_name &&
+        p.nutriments &&
+        (p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'])
+      );
+
+      if (!products.length) {
+        resultsEl.innerHTML = '<div class="search-status">No results found — fill in manually below.</div>';
+        return;
+      }
+
+      resultsEl.innerHTML = '';
+      products.slice(0, 7).forEach(p => {
+        const n = p.nutriments;
+        const cals = Math.round(parseFloat(n['energy-kcal_100g'] || n['energy-kcal'] || 0));
+        const prot = parseFloat(n['proteins_100g'] || n['proteins'] || 0).toFixed(1);
+        const carb = parseFloat(n['carbohydrates_100g'] || n['carbohydrates'] || 0).toFixed(1);
+        const fat  = parseFloat(n['fat_100g'] || n['fat'] || 0).toFixed(1);
+        const brand = p.brands ? ` · ${p.brands.split(',')[0].trim()}` : '';
+
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.innerHTML = `
+          <div class="sri-name">${p.product_name}${brand}</div>
+          <div class="sri-meta">
+            <span>${cals} kcal</span>
+            <span>${prot}g protein</span>
+            <span>${carb}g carbs</span>
+            <span>${fat}g fat</span>
+            <span style="color:var(--muted);opacity:0.6">per 100g</span>
+          </div>`;
+        item.onclick = () => fillFoodFromSearch(p.product_name, cals, prot, carb, fat);
+        resultsEl.appendChild(item);
+      });
+
+    } catch(e) {
+      resultsEl.innerHTML = '<div class="search-status">Search failed — fill in manually below.</div>';
+    }
+  }
+
+  function fillFoodFromSearch(name, cals, protein, carbs, fat) {
+    document.getElementById('food-name').value = name;
+    document.getElementById('food-cals').value = cals;
+    document.getElementById('food-protein').value = protein;
+    document.getElementById('food-carbs').value = carbs;
+    document.getElementById('food-fat').value = fat;
+    document.getElementById('food-autofill-notice').classList.add('visible');
+    hideFoodResults();
+    document.getElementById('food-search-input').value = '';
+  }
+
+  function hideFoodResults() {
+    const el = document.getElementById('food-search-results');
+    el.classList.remove('visible');
+    el.innerHTML = '';
   }
 
   // ─── CAMERA SCANNER ───────────────────────────────────────────
