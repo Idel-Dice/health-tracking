@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#0e0e0e">
 <title>FUEL — Calorie Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.18.6/index.min.js"></script>
 <style>
   :root {
     --bg: #0e0e0e;
@@ -436,6 +437,136 @@
   .lookup-btn:active { border-color: var(--accent); color: var(--accent); }
   .lookup-btn:disabled { opacity: 0.4; }
 
+  /* ── CAMERA SCANNER ─────────────────────────────────── */
+  .scan-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 13px 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    cursor: pointer;
+    white-space: nowrap; flex-shrink: 0;
+    touch-action: manipulation;
+    transition: all 0.2s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .scan-btn:active { border-color: var(--accent); color: var(--accent); }
+  .scan-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .camera-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 1000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .camera-overlay.active { display: flex; }
+
+  .camera-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 16px 20px;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+    z-index: 10;
+  }
+
+  .camera-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.4rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+  }
+
+  .camera-close {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: #fff;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;
+  }
+
+  #camera-video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+
+  .scan-frame {
+    position: absolute;
+    width: min(280px, 80vw);
+    height: 160px;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+
+  .scan-frame::before, .scan-frame::after {
+    content: '';
+    position: absolute;
+    width: 24px; height: 24px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+  .scan-frame::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 12px 0 0 0; }
+  .scan-frame::after  { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 12px 0; }
+
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+    box-shadow: 0 0 8px var(--accent);
+    animation: scan-sweep 2s ease-in-out infinite;
+  }
+
+  @keyframes scan-sweep {
+    0%   { top: 0; }
+    50%  { top: calc(100% - 2px); }
+    100% { top: 0; }
+  }
+
+  .camera-hint {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.6);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  }
+
+  .camera-detected {
+    position: absolute;
+    bottom: 80px;
+    left: 50%; transform: translateX(-50%);
+    background: var(--accent);
+    color: #0e0e0e;
+    padding: 8px 20px;
+    border-radius: 99px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    display: none;
+    white-space: nowrap;
+  }
+  .camera-detected.show { display: block; }
+
   .barcode-result {
     display: none;
     background: var(--surface2);
@@ -786,14 +917,21 @@
           <div style="display:flex;flex-direction:column;gap:14px;">
 
             <div style="font-size:0.72rem;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.5;">
-              Enter the barcode number found on any packaged food (8–13 digits).
+              Scan a barcode with your camera, or enter the number manually (8–13 digits).
             </div>
 
             <div class="barcode-input-row">
               <input type="text" id="barcode-input" placeholder="e.g. 0123456789012"
                 inputmode="numeric" autocomplete="off"
                 onkeydown="if(event.key==='Enter')lookupBarcode()"/>
-              <button class="lookup-btn" id="lookup-btn" onclick="lookupBarcode()">Scan</button>
+              <button class="scan-btn" id="camera-btn" onclick="openCameraScanner()" title="Scan with camera">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+                Scan
+              </button>
+              <button class="lookup-btn" id="lookup-btn" onclick="lookupBarcode()">Go</button>
             </div>
 
             <div class="barcode-loading" id="barcode-loading">searching database…</div>
@@ -873,6 +1011,20 @@
 </div><!-- /app-shell -->
 
 <div class="toast" id="toast"></div>
+
+<!-- CAMERA SCANNER OVERLAY -->
+<div class="camera-overlay" id="camera-overlay">
+  <div class="camera-header">
+    <span class="camera-title">Scan Barcode</span>
+    <button class="camera-close" onclick="closeCameraScanner()">✕</button>
+  </div>
+  <video id="camera-video" autoplay muted playsinline></video>
+  <div class="scan-frame">
+    <div class="scan-line"></div>
+  </div>
+  <div class="camera-detected" id="camera-detected">✓ Found!</div>
+  <div class="camera-hint">Point camera at a product barcode</div>
+</div>
 
 <script>
   // ─── STATE ────────────────────────────────────────────────────
@@ -1135,6 +1287,80 @@
     document.getElementById('barcode-result').classList.toggle('visible',state==='result');
     document.getElementById('lookup-btn').disabled=(state==='loading');
     if(state==='error') document.getElementById('barcode-error').textContent=msg;
+  }
+
+  // ─── CAMERA SCANNER ───────────────────────────────────────────
+  let codeReader = null;
+  let scannerActive = false;
+
+  async function openCameraScanner() {
+    const overlay = document.getElementById('camera-overlay');
+
+    // Check for ZXing availability
+    if (typeof ZXing === 'undefined') {
+      showToast('Scanner library not loaded. Enter barcode manually.');
+      return;
+    }
+
+    overlay.classList.add('active');
+    document.getElementById('camera-detected').classList.remove('show');
+
+    try {
+      codeReader = new ZXing.BrowserMultiFormatReader();
+      scannerActive = true;
+
+      const videoEl = document.getElementById('camera-video');
+
+      // Prefer back camera on mobile
+      const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+      let deviceId = undefined;
+      if (devices.length > 1) {
+        const back = devices.find(d =>
+          /back|rear|environment/i.test(d.label)
+        );
+        deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
+      }
+
+      codeReader.decodeFromVideoDevice(deviceId, videoEl, (result, err) => {
+        if (!scannerActive) return;
+        if (result) {
+          const code = result.getText().replace(/\D/g, '');
+          if (code.length >= 8) {
+            // Flash detection UI
+            document.getElementById('camera-detected').classList.add('show');
+            navigator.vibrate && navigator.vibrate(100);
+
+            setTimeout(() => {
+              closeCameraScanner();
+              document.getElementById('barcode-input').value = code;
+              lookupBarcode();
+            }, 600);
+          }
+        }
+      });
+    } catch (err) {
+      closeCameraScanner();
+      if (err.name === 'NotAllowedError') {
+        showToast('Camera permission denied. Enter barcode manually.');
+      } else {
+        showToast('Camera unavailable. Enter barcode manually.');
+      }
+    }
+  }
+
+  function closeCameraScanner() {
+    scannerActive = false;
+    if (codeReader) {
+      codeReader.reset();
+      codeReader = null;
+    }
+    document.getElementById('camera-overlay').classList.remove('active');
+    // Stop all video tracks
+    const video = document.getElementById('camera-video');
+    if (video.srcObject) {
+      video.srcObject.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
   }
 
   // ─── INIT ─────────────────────────────────────────────────────
