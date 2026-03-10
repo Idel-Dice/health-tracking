@@ -1168,9 +1168,10 @@
 
   // ─── DATE NAV ─────────────────────────────────────────────────
   function changeDate(delta){
-    const d = new Date(currentDate+'T12:00:00');
-    d.setDate(d.getDate()+delta);
-    const nd = d.toISOString().slice(0,10);
+    const [y,m,d] = currentDate.split('-').map(Number);
+    const dt = new Date(y, m-1, d);
+    dt.setDate(dt.getDate()+delta);
+    const nd = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
     if(nd > getTodayStr()) return;
     currentDate = nd;
     render();
@@ -1187,10 +1188,12 @@
 
     if(!name||!cals){ showToast('Enter a name & calories!'); return; }
 
-    if(!data[currentDate]) data[currentDate]={};
-    if(!data[currentDate][meal]) data[currentDate][meal]=[];
-    data[currentDate][meal].push({id:Date.now(), name, cals, protein, carbs, fat});
+    const logDate = getTodayStr();
+    if(!data[logDate]) data[logDate]={};
+    if(!data[logDate][meal]) data[logDate][meal]=[];
+    data[logDate][meal].push({id:Date.now(), name, cals, protein, carbs, fat});
 
+    currentDate = logDate;
     saveData(); render();
     showToast(`${name} logged!`);
 
@@ -1363,15 +1366,17 @@
     if(!barcodeProduct) return;
     const r=(parseFloat(document.getElementById('bp-serving').value)||100)/100;
     const meal=document.getElementById('bp-meal').value;
-    if(!data[currentDate]) data[currentDate]={};
-    if(!data[currentDate][meal]) data[currentDate][meal]=[];
-    data[currentDate][meal].push({
+    const logDate = getTodayStr();
+    if(!data[logDate]) data[logDate]={};
+    if(!data[logDate][meal]) data[logDate][meal]=[];
+    data[logDate][meal].push({
       id:Date.now(), name:barcodeProduct.name,
       cals:Math.round(barcodeProduct.cals100*r),
       protein:parseFloat((barcodeProduct.protein100*r).toFixed(1)),
       carbs:parseFloat((barcodeProduct.carbs100*r).toFixed(1)),
       fat:parseFloat((barcodeProduct.fat100*r).toFixed(1)),
     });
+    currentDate = logDate;
     saveData(); render();
     showToast(`${barcodeProduct.name} logged!`);
     barcodeProduct=null;
