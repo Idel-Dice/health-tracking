@@ -1575,15 +1575,23 @@
     resultsEl.innerHTML = '<div class="search-status">Searching…</div>';
 
     try {
-      // USDA FoodData Central — fast, comprehensive, covers whole foods + branded grocery items
-      const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&dataType=Foundation,SR%20Legacy,Branded&pageSize=10&api_key=DEMO_KEY`;
-      const res = await fetch(url);
+      // USDA FoodData Central — POST with JSON body; dataType must be an array
+      const res = await fetch('https://api.nal.usda.gov/fdc/v1/foods/search?api_key=DEMO_KEY', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: q,
+          dataType: ['Foundation', 'SR Legacy', 'Branded'],
+          pageSize: 10,
+          sortBy: 'score',
+          sortOrder: 'desc'
+        })
+      });
       const json = await res.json();
 
-      const foods = (json.foods || []).filter(f => {
-        const n = f.foodNutrients || [];
-        return n.some(x => x.nutrientName === 'Energy' && x.value > 0);
-      });
+      const foods = (json.foods || []).filter(f =>
+        f.description && (f.foodNutrients || []).length > 0
+      );
 
       if (!foods.length) {
         resultsEl.innerHTML = '<div class="search-status">No results — try a different term or fill in manually.</div>';
@@ -1598,7 +1606,7 @@
           const n = nutrients.find(x => x.nutrientName === name);
           return n ? parseFloat(n.value) || 0 : 0;
         };
-        // Energy may be in kJ or kcal — prefer kcal
+        // Prefer KCAL unit; fall back to any Energy entry
         const calsN = nutrients.find(x => x.nutrientName === 'Energy' && x.unitName === 'KCAL')
                    || nutrients.find(x => x.nutrientName === 'Energy');
         const cals = Math.round(calsN ? parseFloat(calsN.value) || 0 : 0);
