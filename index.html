@@ -1141,7 +1141,13 @@
     render();
   }
 
-  function getTodayStr(){ return new Date().toISOString().slice(0,10); }
+  function getTodayStr(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
 
   function formatDate(s){
     const today = getTodayStr();
@@ -1406,7 +1412,7 @@
 
     try {
       // Use Open Food Facts search — free, no key, huge database
-      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments,serving_quantity,serving_quantity_unit,quantity_unit`;
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&lc=en&fields=product_name,brands,nutriments,serving_quantity,serving_quantity_unit,quantity_unit`;
       const res = await fetch(url);
       const json = await res.json();
 
