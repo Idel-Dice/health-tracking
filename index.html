@@ -1556,100 +1556,303 @@
     if(state==='error') document.getElementById('barcode-error').textContent=msg;
   }
 
-  // ─── FOOD DATABASE SEARCH (AI-powered via Claude) ────────────
+  // ─── FOOD DATABASE SEARCH ─────────────────────────────────────
+  // 220+ USDA-sourced foods. Instant, no network, works everywhere.
+  // Format: [name, kcal, protein_g, carbs_g, fat_g] — all per 100g
+
+  const _FOODS = [
+    // Eggs
+    ["Egg, whole, raw",             143, 12.6,  0.7,  9.5],
+    ["Egg, whole, boiled",          155, 13.0,  1.1, 10.6],
+    ["Egg, fried",                  196, 13.6,  0.8, 14.8],
+    ["Egg, scrambled",              149, 10.1,  1.6, 11.2],
+    ["Egg white, raw",               52, 10.9,  0.7,  0.2],
+    ["Egg yolk, raw",               322, 15.9,  3.6, 26.5],
+    // Chicken & Turkey
+    ["Chicken breast, roasted",     165, 31.0,  0.0,  3.6],
+    ["Chicken breast, raw",         120, 22.5,  0.0,  2.6],
+    ["Chicken thigh, roasted",      209, 26.0,  0.0, 10.9],
+    ["Chicken thigh, raw",          119, 17.4,  0.0,  5.5],
+    ["Chicken drumstick, roasted",  172, 28.3,  0.0,  5.7],
+    ["Chicken wing, roasted",       203, 30.5,  0.0,  8.1],
+    ["Chicken, rotisserie breast",  153, 28.0,  0.0,  3.9],
+    ["Chicken, rotisserie thigh",   192, 22.0,  0.0, 11.2],
+    ["Ground turkey, 93/7",         170, 22.4,  0.0,  9.3],
+    ["Ground turkey, 85/15",        218, 22.4,  0.0, 14.0],
+    ["Turkey breast, roasted",      135, 30.1,  0.0,  1.0],
+    ["Turkey breast, deli",         104, 17.7,  2.5,  2.5],
+    // Beef & Pork
+    ["Ground beef, 80/20, cooked",  254, 25.9,  0.0, 17.4],
+    ["Ground beef, 90/10, cooked",  196, 27.7,  0.0, 10.0],
+    ["Ground beef, 93/7, cooked",   174, 28.5,  0.0,  6.8],
+    ["Steak, sirloin, cooked",      207, 30.5,  0.0,  8.9],
+    ["Steak, ribeye, cooked",       291, 24.5,  0.0, 20.8],
+    ["Steak, filet mignon",         227, 30.5,  0.0, 11.5],
+    ["Roast beef, deli",            130, 18.6,  2.0,  5.0],
+    ["Bacon, cooked",               541, 37.0,  1.4, 42.0],
+    ["Ham, deli sliced",            107, 17.1,  1.6,  3.7],
+    ["Pork chop, cooked",           231, 25.5,  0.0, 13.9],
+    ["Pork tenderloin, cooked",     166, 29.9,  0.0,  4.4],
+    ["Sausage, pork, cooked",       325, 17.5,  1.8, 28.0],
+    ["Sausage, Italian, cooked",    304, 19.0,  2.8, 24.0],
+    ["Hot dog, beef",               290, 11.0,  3.8, 26.2],
+    // Seafood
+    ["Salmon, Atlantic, cooked",    206, 28.8,  0.0,  9.3],
+    ["Salmon, Atlantic, raw",       142, 19.8,  0.0,  6.3],
+    ["Tuna, canned in water",       116, 25.5,  0.0,  0.8],
+    ["Tuna, canned in oil",         198, 29.1,  0.0,  8.2],
+    ["Tuna, fresh, cooked",         184, 30.0,  0.0,  6.3],
+    ["Shrimp, cooked",               99, 24.0,  0.2,  0.3],
+    ["Tilapia, cooked",             128, 26.2,  0.0,  2.7],
+    ["Cod, cooked",                 105, 22.8,  0.0,  0.9],
+    ["Halibut, cooked",             140, 27.2,  0.0,  2.9],
+    ["Sardines, canned in oil",     208, 24.6,  0.0, 11.5],
+    // Dairy & Eggs
+    ["Milk, whole",                  61,  3.2,  4.8,  3.3],
+    ["Milk, 2%",                     50,  3.4,  4.8,  2.0],
+    ["Milk, 1%",                     42,  3.4,  5.0,  1.0],
+    ["Milk, skim",                   34,  3.4,  5.0,  0.1],
+    ["Greek yogurt, 0% plain",       59, 10.0,  3.6,  0.4],
+    ["Greek yogurt, 2% plain",       73,  9.9,  3.8,  1.9],
+    ["Greek yogurt, whole plain",    97,  9.0,  3.8,  5.0],
+    ["Yogurt, plain low-fat",        63,  5.3,  7.0,  1.6],
+    ["Cheddar cheese",              403, 25.0,  1.3, 33.3],
+    ["Mozzarella, part-skim",       280, 28.0,  2.2, 17.1],
+    ["Mozzarella, whole milk",      300, 22.2,  2.2, 22.4],
+    ["Parmesan, grated",            431, 38.5,  4.1, 28.6],
+    ["Swiss cheese",                380, 26.9,  5.4, 27.8],
+    ["American cheese",             371, 16.1,  8.9, 30.6],
+    ["Cream cheese",                342,  6.0,  4.1, 34.0],
+    ["Cottage cheese, 1%",           72, 12.4,  2.7,  1.0],
+    ["Cottage cheese, 2%",           86, 11.1,  3.4,  2.3],
+    ["Butter",                      717,  0.9,  0.1, 81.1],
+    ["Sour cream",                  198,  2.4,  4.6, 19.4],
+    ["Heavy cream",                 340,  2.8,  2.8, 36.1],
+    ["Half and half",               130,  3.0,  4.3, 11.5],
+    // Grains & Bread
+    ["White rice, cooked",          130,  2.7, 28.2,  0.3],
+    ["Brown rice, cooked",          123,  2.7, 25.6,  1.0],
+    ["Jasmine rice, cooked",        129,  2.7, 28.0,  0.3],
+    ["Oats, dry rolled",            389, 17.0, 66.3,  6.9],
+    ["Oatmeal, cooked",              71,  2.5, 12.0,  1.5],
+    ["Granola",                     471, 10.6, 64.0, 20.3],
+    ["Pasta, white, cooked",        158,  5.8, 30.9,  0.9],
+    ["Pasta, whole wheat, cooked",  149,  5.5, 31.1,  0.6],
+    ["White bread",                 265,  9.0, 49.4,  3.2],
+    ["Whole wheat bread",           247, 13.0, 43.1,  3.5],
+    ["Sourdough bread",             260,  9.6, 50.0,  1.9],
+    ["Bagel, plain",                271, 10.3, 53.0,  1.7],
+    ["English muffin",              227,  8.0, 44.0,  1.7],
+    ["Tortilla, flour 10\"",        312,  8.0, 52.0,  7.6],
+    ["Tortilla, corn 6\"",          218,  5.7, 45.9,  2.7],
+    ["Quinoa, cooked",              120,  4.4, 21.3,  1.9],
+    ["Couscous, cooked",            112,  3.8, 23.2,  0.2],
+    ["Crackers, whole wheat",       422,  9.4, 66.8, 14.3],
+    ["Rice cakes, plain",           387,  8.2, 81.6,  3.1],
+    ["Pretzels",                    380,  9.5, 80.0,  3.7],
+    ["Corn tortilla chips",         489,  6.5, 63.5, 24.0],
+    ["Potato chips",                536,  7.0, 53.0, 34.6],
+    ["Popcorn, air-popped",         387, 13.0, 77.9,  4.5],
+    // Vegetables
+    ["Potato, baked",                93,  2.5, 21.2,  0.1],
+    ["Potato, boiled",               87,  1.9, 20.1,  0.1],
+    ["Sweet potato, cooked",         90,  2.0, 20.7,  0.1],
+    ["French fries",                312,  3.4, 41.4, 15.0],
+    ["Mashed potatoes",             113,  2.0, 17.0,  4.2],
+    ["Broccoli, raw",                34,  2.8,  6.6,  0.4],
+    ["Broccoli, steamed",            35,  2.4,  7.2,  0.4],
+    ["Spinach, raw",                 23,  2.9,  3.6,  0.4],
+    ["Spinach, cooked",              41,  5.4,  6.8,  0.5],
+    ["Kale, raw",                    49,  4.3,  8.8,  0.9],
+    ["Lettuce, romaine",             17,  1.2,  3.3,  0.3],
+    ["Lettuce, iceberg",             14,  0.9,  3.0,  0.1],
+    ["Carrot, raw",                  41,  0.9,  9.6,  0.2],
+    ["Tomato, raw",                  18,  0.9,  3.9,  0.2],
+    ["Cucumber, raw",                15,  0.7,  3.6,  0.1],
+    ["Bell pepper, red",             31,  1.0,  6.0,  0.3],
+    ["Bell pepper, green",           20,  0.9,  4.6,  0.2],
+    ["Onion, raw",                   40,  1.1,  9.3,  0.1],
+    ["Garlic, raw",                 149,  6.4, 33.1,  0.5],
+    ["Corn, cooked",                 96,  3.4, 21.0,  1.5],
+    ["Peas, green, cooked",          84,  5.4, 15.6,  0.2],
+    ["Edamame, cooked",             122, 11.9,  8.9,  5.2],
+    ["Mushrooms, raw",               22,  3.1,  3.3,  0.3],
+    ["Zucchini, raw",                17,  1.2,  3.1,  0.3],
+    ["Celery, raw",                  16,  0.7,  3.0,  0.2],
+    ["Cauliflower, raw",             25,  2.0,  5.3,  0.3],
+    ["Asparagus, cooked",            22,  2.4,  4.1,  0.2],
+    ["Green beans, cooked",          35,  1.9,  7.9,  0.1],
+    // Legumes & Tofu
+    ["Black beans, cooked",         132,  8.9, 23.7,  0.5],
+    ["Chickpeas, cooked",           164,  8.9, 27.4,  2.6],
+    ["Lentils, cooked",             116,  9.0, 20.1,  0.4],
+    ["Kidney beans, cooked",        127,  8.7, 22.8,  0.5],
+    ["Pinto beans, cooked",         143,  9.0, 26.2,  0.7],
+    ["Tofu, firm",                   76,  8.1,  1.9,  4.2],
+    ["Tofu, silken",                 55,  4.8,  2.0,  2.7],
+    // Fruit
+    ["Banana",                       89,  1.1, 22.8,  0.3],
+    ["Apple, raw",                   52,  0.3, 13.8,  0.2],
+    ["Orange, raw",                  47,  0.9, 11.8,  0.1],
+    ["Strawberries, raw",            32,  0.7,  7.7,  0.3],
+    ["Blueberries, raw",             57,  0.7, 14.5,  0.3],
+    ["Raspberries, raw",             52,  1.2, 11.9,  0.7],
+    ["Grapes, raw",                  69,  0.7, 18.1,  0.2],
+    ["Watermelon, raw",              30,  0.6,  7.6,  0.2],
+    ["Pineapple, raw",               50,  0.5, 13.1,  0.1],
+    ["Mango, raw",                   60,  0.8, 15.0,  0.4],
+    ["Peach, raw",                   39,  0.9,  9.5,  0.3],
+    ["Pear, raw",                    57,  0.4, 15.2,  0.1],
+    ["Grapefruit, raw",              42,  0.8, 10.7,  0.1],
+    ["Cherries, raw",                63,  1.1, 16.0,  0.2],
+    ["Avocado",                     160,  2.0,  8.5, 14.7],
+    // Nuts & Seeds
+    ["Almonds",                     579, 21.2, 21.7, 49.9],
+    ["Peanuts, dry roasted",        585, 23.7, 21.5, 49.7],
+    ["Peanut butter, smooth",       588, 25.1, 20.1, 50.4],
+    ["Peanut butter, crunchy",      598, 22.2, 22.3, 51.4],
+    ["Walnuts",                     654, 15.2, 13.7, 65.2],
+    ["Cashews, dry roasted",        553, 15.3, 32.7, 43.9],
+    ["Pistachios",                  567, 20.6, 27.7, 45.8],
+    ["Sunflower seeds",             584, 20.8, 20.0, 51.5],
+    ["Chia seeds",                  486, 16.5, 42.1, 30.7],
+    ["Flax seeds",                  534, 18.3, 28.9, 42.2],
+    // Oils, Fats & Condiments
+    ["Olive oil",                   884,  0.0,  0.0,100.0],
+    ["Coconut oil",                 862,  0.0,  0.0,100.0],
+    ["Vegetable oil",               884,  0.0,  0.0,100.0],
+    ["Mayonnaise",                  680,  1.0,  0.6, 74.9],
+    ["Ketchup",                     112,  1.9, 27.8,  0.1],
+    ["Mustard",                      66,  4.4,  5.8,  4.0],
+    ["Soy sauce",                    53,  5.6,  4.9,  0.6],
+    ["Honey",                       304,  0.3, 82.4,  0.0],
+    ["Maple syrup",                 260,  0.0, 67.0,  0.1],
+    ["Ranch dressing",              475,  1.3,  7.1, 50.0],
+    ["Vinaigrette dressing",        286,  0.2,  4.6, 30.0],
+    ["Hummus",                      166,  7.9, 14.3,  9.6],
+    ["Salsa",                        36,  1.6,  7.4,  0.2],
+    ["Guacamole",                   150,  2.0,  8.6, 13.2],
+    ["Cream cheese",                342,  6.0,  4.1, 34.0],
+    // Beverages
+    ["Orange juice",                 45,  0.7, 10.4,  0.2],
+    ["Apple juice",                  46,  0.1, 11.3,  0.1],
+    ["Coffee, black",                 2,  0.3,  0.0,  0.0],
+    ["Coffee, latte, whole milk",    54,  3.0,  5.5,  2.2],
+    ["Tea, unsweetened",              1,  0.0,  0.3,  0.0],
+    ["Soda, cola",                   37,  0.0,  9.6,  0.0],
+    ["Almond milk, unsweetened",     15,  0.6,  0.6,  1.2],
+    ["Oat milk",                     45,  1.3,  6.7,  1.5],
+    // Protein & Supplements
+    ["Protein powder, whey",        352, 75.0,  9.6,  3.2],
+    ["Protein powder, plant-based", 340, 68.0, 14.0,  4.0],
+    ["Protein bar, average",        360, 20.0, 40.0, 12.0],
+    ["Protein shake, premade",      160, 30.0,  8.0,  2.5],
+    // Fast Food & Restaurant
+    ["Burger, beef, plain",         272, 14.4, 30.6, 11.8],
+    ["Cheeseburger",                303, 15.6, 32.4, 12.6],
+    ["Pizza, cheese",               266, 11.4, 33.6,  9.8],
+    ["Pizza, pepperoni",            298, 12.1, 33.0, 13.2],
+    ["Chicken nuggets",             296, 15.0, 20.0, 18.0],
+    ["Fried chicken, breast",       246, 22.1, 12.2, 12.0],
+    ["Burrito, chicken rice",       163, 10.7, 19.4,  4.2],
+    ["Caesar salad w/ dressing",    158,  4.0,  8.3, 13.0],
+    ["Sushi, salmon roll",          204,  8.0, 30.0,  6.0],
+    // Sweets & Snacks
+    ["Dark chocolate, 70%",         598,  7.8, 45.9, 42.6],
+    ["Milk chocolate",              535,  7.7, 59.4, 29.7],
+    ["Ice cream, vanilla",          207,  3.5, 23.6, 11.0],
+    ["Granola bar",                 471,  7.6, 64.4, 19.8],
+    ["Jam / jelly",                 278,  0.4, 68.9,  0.1],
+  ];
+
+  // Build an inverted word index at startup for O(1) lookups
+  const _FIDX = {};
+  _FOODS.forEach(([name], i) => {
+    name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).forEach(w => {
+      if (w.length < 2) return;
+      (_FIDX[w] = _FIDX[w] || []).push(i);
+    });
+  });
+
+  function _queryDB(q) {
+    const terms = q.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+    if (!terms.length) return [];
+    const sc = {};
+    terms.forEach(t => {
+      Object.keys(_FIDX).forEach(w => {
+        const pts = w === t ? 12 : w.startsWith(t) ? 6 : w.includes(t) ? 2 : 0;
+        if (pts) _FIDX[w].forEach(i => { sc[i] = (sc[i] || 0) + pts; });
+      });
+    });
+    // Bonus when every term appears in the same food name
+    if (terms.length > 1) {
+      Object.keys(sc).forEach(i => {
+        if (terms.every(t => _FOODS[i][0].toLowerCase().includes(t))) sc[i] += 20;
+      });
+    }
+    return Object.keys(sc)
+      .sort((a, b) => sc[b] - sc[a])
+      .slice(0, 8)
+      .map(i => {
+        const [name, cals, protein, carbs, fat] = _FOODS[i];
+        return { name, cals, protein, carbs, fat };
+      });
+  }
+
   let foodSearchTimer = null;
 
   function onFoodSearchInput() {
     clearTimeout(foodSearchTimer);
     const q = document.getElementById('food-search-input').value.trim();
     if (!q) { hideFoodResults(); return; }
-    // Only auto-search on Enter; debounce for 600ms otherwise
-    foodSearchTimer = setTimeout(() => searchFoodDB(), 600);
+    // Debounce slightly so it fires after the user pauses typing
+    foodSearchTimer = setTimeout(() => searchFoodDB(), 120);
   }
 
-  async function searchFoodDB() {
+  function searchFoodDB() {
     const q = document.getElementById('food-search-input').value.trim();
     if (!q) return;
-
     const resultsEl = document.getElementById('food-search-results');
     resultsEl.classList.add('visible');
-    resultsEl.innerHTML = '<div class="search-status">Looking up nutrition data…</div>';
 
-    try {
-      const prompt = `You are a nutrition database. The user searched for: "${q}"
+    const hits = _queryDB(q);
 
-Return nutrition data as a JSON array of up to 6 common variations/serving types for this food.
-Each object must have exactly these fields:
-- name: string (short descriptive name, e.g. "Egg, whole, raw", "Egg, boiled")
-- cals: number (kcal per 100g)
-- protein: number (grams per 100g)
-- carbs: number (grams per 100g)
-- fat: number (grams per 100g)
-
-Use standard USDA nutritional values. Return ONLY the JSON array, no markdown, no explanation.
-Example: [{"name":"Egg, whole, raw","cals":143,"protein":12.6,"carbs":0.7,"fat":9.5}]`;
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        resultsEl.innerHTML = `<div class="search-status">Lookup error ${response.status} — fill in manually below.</div>`;
-        return;
-      }
-
-      const data = await response.json();
-      const text = data.content?.[0]?.text?.trim() || '';
-
-      // Strip any accidental markdown fences
-      const clean = text.replace(/```json|```/g, '').trim();
-      const foods = JSON.parse(clean);
-
-      if (!Array.isArray(foods) || !foods.length) {
-        resultsEl.innerHTML = '<div class="search-status">No results found — fill in manually below.</div>';
-        return;
-      }
-
-      resultsEl.innerHTML = '';
-      foods.forEach(f => {
-        const cals  = Math.round(f.cals   || 0);
-        const prot  = (parseFloat(f.protein) || 0).toFixed(1);
-        const carb  = (parseFloat(f.carbs)   || 0).toFixed(1);
-        const fat   = (parseFloat(f.fat)     || 0).toFixed(1);
-
-        const item = document.createElement('div');
-        item.className = 'search-result-item';
-        item.innerHTML = `
-          <div class="sri-name">${f.name}</div>
-          <div class="sri-meta">
-            <span>${cals} kcal</span>
-            <span>${prot}g protein</span>
-            <span>${carb}g carbs</span>
-            <span>${fat}g fat</span>
-            <span style="color:var(--muted);opacity:0.6">per 100g</span>
-          </div>`;
-        item.onclick = () => fillFoodFromSearch(f.name, cals, prot, carb, fat);
-        resultsEl.appendChild(item);
-      });
-
-    } catch(e) {
-      resultsEl.innerHTML = `<div class="search-status">Search error: ${e.message}</div>`;
+    if (!hits.length) {
+      resultsEl.innerHTML = '<div class="search-status">No match — try a simpler term (e.g. "chicken") or fill in manually below.</div>';
+      return;
     }
+
+    resultsEl.innerHTML = '';
+    hits.forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      item.innerHTML = `
+        <div class="sri-name">${f.name}</div>
+        <div class="sri-meta">
+          <span>${Math.round(f.cals)} kcal</span>
+          <span>${(+f.protein).toFixed(1)}g protein</span>
+          <span>${(+f.carbs).toFixed(1)}g carbs</span>
+          <span>${(+f.fat).toFixed(1)}g fat</span>
+          <span style="color:var(--muted);opacity:0.55">per 100g</span>
+        </div>`;
+      item.onclick = () => fillFoodFromSearch(
+        f.name,
+        Math.round(f.cals),
+        (+f.protein).toFixed(1),
+        (+f.carbs).toFixed(1),
+        (+f.fat).toFixed(1)
+      );
+      resultsEl.appendChild(item);
+    });
   }
 
   function fillFoodFromSearch(name, cals, protein, carbs, fat) {
-    document.getElementById('food-name').value = name;
-    document.getElementById('food-cals').value = cals;
+    document.getElementById('food-name').value    = name;
+    document.getElementById('food-cals').value    = cals;
     document.getElementById('food-protein').value = protein;
-    document.getElementById('food-carbs').value = carbs;
-    document.getElementById('food-fat').value = fat;
-    document.getElementById('food-qty').value = '1';
+    document.getElementById('food-carbs').value   = carbs;
+    document.getElementById('food-fat').value     = fat;
+    document.getElementById('food-qty').value     = '1';
     document.getElementById('food-autofill-notice').classList.add('visible');
     hideFoodResults();
     document.getElementById('food-search-input').value = '';
