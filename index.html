@@ -1399,12 +1399,8 @@
   function onFoodSearchInput() {
     clearTimeout(foodSearchTimer);
     const q = document.getElementById('food-search-input').value.trim();
-    if (!q) {
-      hideFoodResults();
-      return;
-    }
-    // Debounce 500ms for auto-search, or user can hit Search
-    foodSearchTimer = setTimeout(() => searchFoodDB(), 500);
+    if (!q) { hideFoodResults(); return; }
+    foodSearchTimer = setTimeout(() => searchFoodDB(), 400);
   }
 
   async function searchFoodDB() {
@@ -1416,35 +1412,44 @@
     resultsEl.innerHTML = '<div class="search-status">Searching…</div>';
 
     try {
-      // Use Open Food Facts search — free, no key, huge database
-      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&lc=en&fields=product_name,brands,nutriments,serving_quantity,serving_quantity_unit,quantity_unit`;
+      // USDA FoodData Central — fast, comprehensive, covers whole foods + branded grocery items
+      const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(q)}&dataType=Foundation,SR%20Legacy,Branded&pageSize=10&api_key=DEMO_KEY`;
       const res = await fetch(url);
       const json = await res.json();
 
-      const products = (json.products || []).filter(p =>
-        p.product_name &&
-        p.nutriments &&
-        (p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'])
-      );
+      const foods = (json.foods || []).filter(f => {
+        const n = f.foodNutrients || [];
+        return n.some(x => x.nutrientName === 'Energy' && x.value > 0);
+      });
 
-      if (!products.length) {
-        resultsEl.innerHTML = '<div class="search-status">No results found — fill in manually below.</div>';
+      if (!foods.length) {
+        resultsEl.innerHTML = '<div class="search-status">No results — try a different term or fill in manually.</div>';
         return;
       }
 
       resultsEl.innerHTML = '';
-      products.slice(0, 7).forEach(p => {
-        const n = p.nutriments;
-        const cals = Math.round(parseFloat(n['energy-kcal_100g'] || n['energy-kcal'] || 0));
-        const prot = parseFloat(n['proteins_100g'] || n['proteins'] || 0).toFixed(1);
-        const carb = parseFloat(n['carbohydrates_100g'] || n['carbohydrates'] || 0).toFixed(1);
-        const fat  = parseFloat(n['fat_100g'] || n['fat'] || 0).toFixed(1);
-        const brand = p.brands ? ` · ${p.brands.split(',')[0].trim()}` : '';
+
+      foods.slice(0, 8).forEach(f => {
+        const nutrients = f.foodNutrients || [];
+        const get = (name) => {
+          const n = nutrients.find(x => x.nutrientName === name);
+          return n ? parseFloat(n.value) || 0 : 0;
+        };
+        // Energy may be in kJ or kcal — prefer kcal
+        const calsN = nutrients.find(x => x.nutrientName === 'Energy' && x.unitName === 'KCAL')
+                   || nutrients.find(x => x.nutrientName === 'Energy');
+        const cals = Math.round(calsN ? parseFloat(calsN.value) || 0 : 0);
+        const prot = get('Protein').toFixed(1);
+        const carb = get('Carbohydrate, by difference').toFixed(1);
+        const fat  = get('Total lipid (fat)').toFixed(1);
+
+        const brand = f.brandOwner ? ` · ${f.brandOwner}` : (f.brandName ? ` · ${f.brandName}` : '');
+        const desc = f.description || 'Unknown';
 
         const item = document.createElement('div');
         item.className = 'search-result-item';
         item.innerHTML = `
-          <div class="sri-name">${p.product_name}${brand}</div>
+          <div class="sri-name">${desc}${brand}</div>
           <div class="sri-meta">
             <span>${cals} kcal</span>
             <span>${prot}g protein</span>
@@ -1452,7 +1457,7 @@
             <span>${fat}g fat</span>
             <span style="color:var(--muted);opacity:0.6">per 100g</span>
           </div>`;
-        item.onclick = () => fillFoodFromSearch(p.product_name, cals, prot, carb, fat);
+        item.onclick = () => fillFoodFromSearch(desc, cals, prot, carb, fat);
         resultsEl.appendChild(item);
       });
 
