@@ -467,6 +467,94 @@
   }
   .food-autofill-notice.visible { display: block; }
 
+  /* ── QUANTITY MULTIPLIER ─────────────────────────────── */
+  .qty-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .qty-stepper {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .qty-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    width: 40px; height: 44px;
+    font-size: 1.3rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+  .qty-btn:active { background: var(--border); color: var(--accent); }
+
+  #food-qty {
+    width: 48px;
+    text-align: center;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface2);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.2rem;
+    letter-spacing: 1px;
+    color: var(--accent);
+    padding: 10px 4px;
+  }
+  #food-qty:focus { border-color: var(--border); outline: none; }
+
+  .qty-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+  }
+
+  .macro-preview-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .mpr-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .mpr-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: var(--accent);
+  }
+
+  .mpr-val.protein { color: #74b9ff; }
+  .mpr-val.carbs   { color: var(--accent2); }
+  .mpr-val.fat     { color: #fd79a8; }
+
+  .mpr-label {
+    font-size: 0.52rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
   .primary-btn {
     background: var(--accent);
     color: #0e0e0e;
@@ -970,12 +1058,27 @@
               </div>
             </div>
 
-            <div class="food-autofill-notice" id="food-autofill-notice">✓ Nutritional data auto-filled — adjust if needed</div>
+            <div class="food-autofill-notice" id="food-autofill-notice">✓ Nutritional data auto-filled — adjust quantity or values if needed</div>
 
             <div class="form-group">
               <label class="form-label">Food Name</label>
-              <input type="text" id="food-name" placeholder="e.g. Chicken Breast" autocomplete="off"/>
+              <input type="text" id="food-name" placeholder="e.g. Chicken Breast" autocomplete="off"
+                oninput="updateMacroPreview()"/>
             </div>
+
+            <div class="form-group">
+              <label class="form-label">Quantity</label>
+              <div class="qty-row">
+                <div class="qty-stepper">
+                  <button class="qty-btn" onclick="changeQty(-1)">−</button>
+                  <input type="number" id="food-qty" value="1" min="0.25" step="0.25"
+                    inputmode="decimal" oninput="updateMacroPreview()"/>
+                  <button class="qty-btn" onclick="changeQty(1)">+</button>
+                </div>
+                <span class="qty-label">× serving (per 100g base)</span>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label">Meal</label>
               <select id="meal-select">
@@ -983,18 +1086,35 @@
                 <option>Dinner</option><option>Snacks</option>
               </select>
             </div>
+
             <div class="form-group">
-              <label class="form-label">Calories (kcal)</label>
-              <input type="number" id="food-cals" placeholder="0" min="0" inputmode="decimal"/>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Macros (g) — Protein / Carbs / Fat</label>
+              <label class="form-label">Base Nutrition (per 1 serving)</label>
+              <div class="macro-inputs" style="margin-bottom:8px;">
+                <input type="number" id="food-cals" placeholder="kcal" min="0" inputmode="decimal"
+                  oninput="updateMacroPreview()"/>
+                <input type="number" id="food-protein" placeholder="Protein g" min="0" inputmode="decimal"
+                  oninput="updateMacroPreview()"/>
+                <input type="number" id="food-carbs" placeholder="Carbs g" min="0" inputmode="decimal"
+                  oninput="updateMacroPreview()"/>
+              </div>
               <div class="macro-inputs">
-                <input type="number" id="food-protein" placeholder="Protein" min="0" inputmode="decimal"/>
-                <input type="number" id="food-carbs" placeholder="Carbs" min="0" inputmode="decimal"/>
-                <input type="number" id="food-fat" placeholder="Fat" min="0" inputmode="decimal"/>
+                <input type="number" id="food-fat" placeholder="Fat g" min="0" inputmode="decimal"
+                  oninput="updateMacroPreview()"/>
+                <div></div><div></div>
               </div>
             </div>
+
+            <!-- Live macro preview scaled by quantity -->
+            <div class="form-group" id="macro-preview-wrap" style="display:none;">
+              <label class="form-label" id="macro-preview-label">Total for 1 serving</label>
+              <div class="macro-preview-row">
+                <div class="mpr-chip"><div class="mpr-val" id="prev-cals">0</div><div class="mpr-label">kcal</div></div>
+                <div class="mpr-chip"><div class="mpr-val protein" id="prev-prot">0g</div><div class="mpr-label">protein</div></div>
+                <div class="mpr-chip"><div class="mpr-val carbs" id="prev-carbs">0g</div><div class="mpr-label">carbs</div></div>
+                <div class="mpr-chip"><div class="mpr-val fat" id="prev-fat">0g</div><div class="mpr-label">fat</div></div>
+              </div>
+            </div>
+
             <button class="primary-btn" onclick="addFood()">+ Log Food</button>
           </div>
         </div>
@@ -1178,31 +1298,74 @@
   }
 
   // ─── ADD FOOD ─────────────────────────────────────────────────
-  function addFood(){
-    const name = document.getElementById('food-name').value.trim();
-    const meal = document.getElementById('meal-select').value;
-    const cals = parseFloat(document.getElementById('food-cals').value)||0;
-    const protein = parseFloat(document.getElementById('food-protein').value)||0;
-    const carbs = parseFloat(document.getElementById('food-carbs').value)||0;
-    const fat = parseFloat(document.getElementById('food-fat').value)||0;
+  function changeQty(delta) {
+    const input = document.getElementById('food-qty');
+    const cur = parseFloat(input.value) || 1;
+    const next = Math.max(0.25, Math.round((cur + delta) * 4) / 4);
+    input.value = next;
+    updateMacroPreview();
+  }
 
-    if(!name||!cals){ showToast('Enter a name & calories!'); return; }
+  function updateMacroPreview() {
+    const qty   = parseFloat(document.getElementById('food-qty').value) || 1;
+    const cals  = parseFloat(document.getElementById('food-cals').value) || 0;
+    const prot  = parseFloat(document.getElementById('food-protein').value) || 0;
+    const carbs = parseFloat(document.getElementById('food-carbs').value) || 0;
+    const fat   = parseFloat(document.getElementById('food-fat').value) || 0;
+    const name  = document.getElementById('food-name').value.trim();
+
+    const wrap = document.getElementById('macro-preview-wrap');
+    // Show preview only when there's something to show
+    if (!cals && !prot && !carbs && !fat) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+
+    const label = qty === 1
+      ? (name ? `Total for 1 × ${name}` : 'Total for 1 serving')
+      : (name ? `Total for ${qty} × ${name}` : `Total for ${qty} servings`);
+    document.getElementById('macro-preview-label').textContent = label;
+
+    document.getElementById('prev-cals').textContent  = Math.round(cals  * qty);
+    document.getElementById('prev-prot').textContent  = (prot  * qty).toFixed(1) + 'g';
+    document.getElementById('prev-carbs').textContent = (carbs * qty).toFixed(1) + 'g';
+    document.getElementById('prev-fat').textContent   = (fat   * qty).toFixed(1) + 'g';
+  }
+
+  function addFood(){
+    const name  = document.getElementById('food-name').value.trim();
+    const meal  = document.getElementById('meal-select').value;
+    const qty   = parseFloat(document.getElementById('food-qty').value) || 1;
+    const cals  = parseFloat(document.getElementById('food-cals').value) || 0;
+    const prot  = parseFloat(document.getElementById('food-protein').value) || 0;
+    const carbs = parseFloat(document.getElementById('food-carbs').value) || 0;
+    const fat   = parseFloat(document.getElementById('food-fat').value) || 0;
+
+    if(!name || !cals){ showToast('Enter a name & calories!'); return; }
+
+    const entryName = qty !== 1 ? `${name} ×${qty}` : name;
 
     const logDate = getTodayStr();
     if(!data[logDate]) data[logDate]={};
     if(!data[logDate][meal]) data[logDate][meal]=[];
-    data[logDate][meal].push({id:Date.now(), name, cals, protein, carbs, fat});
+    data[logDate][meal].push({
+      id: Date.now(),
+      name: entryName,
+      cals:    Math.round(cals  * qty),
+      protein: parseFloat((prot  * qty).toFixed(1)),
+      carbs:   parseFloat((carbs * qty).toFixed(1)),
+      fat:     parseFloat((fat   * qty).toFixed(1)),
+    });
 
     currentDate = logDate;
     saveData(); render();
-    showToast(`${name} logged!`);
+    showToast(`${entryName} logged!`);
 
     ['food-name','food-cals','food-protein','food-carbs','food-fat'].forEach(id=>{
       document.getElementById(id).value='';
     });
+    document.getElementById('food-qty').value = '1';
     document.getElementById('food-autofill-notice').classList.remove('visible');
+    document.getElementById('macro-preview-wrap').style.display = 'none';
 
-    // Jump to today tab
     showTab('today', document.querySelector('.nav-btn'));
   }
 
@@ -1472,9 +1635,11 @@
     document.getElementById('food-protein').value = protein;
     document.getElementById('food-carbs').value = carbs;
     document.getElementById('food-fat').value = fat;
+    document.getElementById('food-qty').value = '1';
     document.getElementById('food-autofill-notice').classList.add('visible');
     hideFoodResults();
     document.getElementById('food-search-input').value = '';
+    updateMacroPreview();
   }
 
   function hideFoodResults() {
