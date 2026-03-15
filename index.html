@@ -8,7 +8,119 @@
 <meta name="theme-color" content="#0e0e0e">
 <title>FUEL — Calorie Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js">
+  // ─── CUSTOM FOOD DATABASE ────────────────────────────────────────
+  function loadCustomDB(){ try{ return JSON.parse(localStorage.getItem('fuel_custom_db')||'[]'); }catch{ return []; } }
+  function saveCustomDB(db){ localStorage.setItem('fuel_custom_db', JSON.stringify(db)); }
+
+  function saveToCustomDB() {
+    const name    = document.getElementById('food-name').value.trim();
+    const cals    = parseFloat(document.getElementById('food-cals').value)    || 0;
+    const protein = parseFloat(document.getElementById('food-protein').value) || 0;
+    const carbs   = parseFloat(document.getElementById('food-carbs').value)   || 0;
+    const fat     = document.getElementById('food-fat').value.trim();
+
+    if (!name)  { showToast('Enter a food name first.'); return; }
+    if (!cals)  { showToast('Enter calories first.'); return; }
+    if (!document.getElementById('food-protein').value.trim()) { showToast('Enter protein (can be 0).'); return; }
+    if (!document.getElementById('food-carbs').value.trim())   { showToast('Enter carbs (can be 0).'); return; }
+    if (!fat)   { showToast('Enter fat (can be 0).'); return; }
+
+    const servingG = window._currentServingG || 100;
+    const servingLabel = window._currentServingLabel || '100g';
+
+    const db = loadCustomDB();
+    // Check for duplicate name
+    const existing = db.findIndex(e => e.name.toLowerCase() === name.toLowerCase());
+    const entry = {
+      name, cals, protein,
+      carbs:   parseFloat(document.getElementById('food-carbs').value) || 0,
+      fat:     parseFloat(fat) || 0,
+      serving_g: servingG,
+      serving_label: servingLabel,
+      saved: Date.now()
+    };
+    if (existing >= 0) {
+      db[existing] = entry;
+      showToast(`"${name}" updated in My Database`);
+    } else {
+      db.push(entry);
+      showToast(`"${name}" saved to My Database`);
+    }
+    saveCustomDB(db);
+  }
+
+  // Merge custom DB into search results (prepend matching)
+  const _origQueryDB = typeof _queryDB !== 'undefined' ? _queryDB : null;
+
+  function searchCustomDB(q) {
+    const db = loadCustomDB();
+    if (!db.length || !q) return [];
+    const ql = q.toLowerCase();
+    return db.filter(e => e.name.toLowerCase().includes(ql)).slice(0, 4);
+  }
+
+  // ─── EDIT MODAL ──────────────────────────────────────────────────
+  let _editMeal = null;
+  let _editId   = null;
+
+  function openEditModal(meal, id) {
+    // Find the entry
+    const entries = (data[currentDate] && data[currentDate][meal]) || [];
+    const entry = entries.find(f => f.id === id);
+    if (!entry) return;
+
+    _editMeal = meal;
+    _editId   = id;
+
+    document.getElementById('edit-name').value    = entry.name;
+    document.getElementById('edit-cals').value    = entry.cals;
+    document.getElementById('edit-protein').value = entry.protein;
+    document.getElementById('edit-carbs').value   = entry.carbs;
+    document.getElementById('edit-fat').value     = entry.fat;
+
+    document.getElementById('edit-modal-overlay').classList.add('active');
+  }
+
+  function closeEditModal(e) {
+    // If called from overlay click, only close if clicking the backdrop itself
+    if (e && e.target !== document.getElementById('edit-modal-overlay')) return;
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null;
+    _editId   = null;
+  }
+
+  function saveEditEntry() {
+    if (!_editMeal || !_editId) return;
+    const entries = data[currentDate] && data[currentDate][_editMeal];
+    if (!entries) return;
+    const idx = entries.findIndex(f => f.id === _editId);
+    if (idx < 0) return;
+
+    const name    = document.getElementById('edit-name').value.trim();
+    const cals    = parseFloat(document.getElementById('edit-cals').value)    || 0;
+    const protein = parseFloat(document.getElementById('edit-protein').value) || 0;
+    const carbs   = parseFloat(document.getElementById('edit-carbs').value)   || 0;
+    const fat     = parseFloat(document.getElementById('edit-fat').value)     || 0;
+
+    if (!name) { showToast('Name cannot be empty.'); return; }
+
+    entries[idx] = { ...entries[idx], name, cals, protein, carbs, fat };
+    saveData();
+    render();
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null; _editId = null;
+    showToast('Entry updated');
+  }
+
+  function deleteEditEntry() {
+    if (!_editMeal || !_editId) return;
+    deleteFood(_editMeal, _editId);
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null; _editId = null;
+  }
+
+  </script>
 <style>
   :root {
     --bg: #0e0e0e;
@@ -458,9 +570,6 @@
     text-align: center;
   }
 
-  #food-serving-info {
-    margin-top: 0px;
-  }
   .food-autofill-notice {
     display: none;
     font-size: 0.68rem;
@@ -935,7 +1044,147 @@
 
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
-</style>
+
+  /* ── Custom DB entries ── */
+  .custom-db-badge {
+    display: inline-block;
+    font-size: 0.55rem;
+    background: rgba(232,255,71,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(232,255,71,0.3);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: middle;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .add-to-db-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px dashed rgba(232,255,71,0.35);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .add-to-db-btn:hover { background: rgba(232,255,71,0.07); border-color: var(--accent); }
+
+  /* ── Scan multiplier ── */
+  .bp-multiplier-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .bp-multiplier-row label {
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .bp-multiplier-row .qty-stepper { flex-shrink: 0; }
+
+  /* ── Editable food log entries ── */
+  .food-item {
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .food-item:active { background: rgba(255,255,255,0.04); }
+
+  .edit-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .edit-modal-overlay.active { display: flex; }
+  .edit-modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    width: 100%;
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .edit-modal-title {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .edit-modal input[type=text],
+  .edit-modal input[type=number] {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .edit-modal-macros {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .edit-modal-macros > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .edit-modal-macros label {
+    font-size: 0.58rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .edit-modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .edit-modal-actions .btn-cancel {
+    padding: 11px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .edit-modal-actions .btn-delete {
+    padding: 11px;
+    background: transparent;
+    border: 1px solid rgba(255,71,87,0.4);
+    border-radius: 8px;
+    color: #ff4757;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .edit-modal-actions .btn-save {
+    grid-column: 1 / -1;
+    padding: 13px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  </style>
 </head>
 <body>
 
@@ -1061,8 +1310,7 @@
               </div>
             </div>
 
-            <div class="food-autofill-notice" id="food-autofill-notice">✓ Nutritional data filled — adjust quantity below</div>
-            <div id="food-serving-info" style="display:none;font-size:0.72rem;color:var(--accent);font-family:'DM Mono',monospace;padding:6px 10px;background:rgba(232,255,71,0.08);border-radius:6px;border:1px solid rgba(232,255,71,0.2);"></div>
+            <div class="food-autofill-notice" id="food-autofill-notice">✓ Nutritional data auto-filled — adjust quantity or values if needed</div>
 
             <div class="form-group">
               <label class="form-label">Food Name</label>
@@ -1071,16 +1319,17 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">Quantity <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(grams)</span></label>
+              <label class="form-label">Quantity</label>
               <div class="qty-row">
                 <div class="qty-stepper">
-                  <button class="qty-btn" onclick="changeQty(-5)">−</button>
-                  <input type="number" id="food-qty" value="100" min="5" step="5"
+                  <button class="qty-btn" onclick="changeQty(-1)">−</button>
+                  <input type="number" id="food-qty" value="1" min="0.25" step="0.25"
                     inputmode="decimal" oninput="updateMacroPreview()"/>
-                  <button class="qty-btn" onclick="changeQty(5)">+</button>
+                  <button class="qty-btn" onclick="changeQty(1)">+</button>
                 </div>
-                <span class="qty-label" id="qty-label-text">g</span>
+                <span class="qty-label" id="qty-serving-label">× serving</span>
               </div>
+              <div id="qty-serving-hint" style="display:none;font-size:0.65rem;color:var(--accent);font-family:'DM Mono',monospace;margin-top:5px;padding:5px 8px;background:rgba(232,255,71,0.07);border-radius:6px;"></div>
             </div>
 
             <div class="form-group">
@@ -1092,7 +1341,7 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">Base Nutrition <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(per 100g — macros auto-scale with grams)</span></label>
+              <label class="form-label">Base Nutrition (per 1 serving)</label>
               <div class="macro-inputs" style="margin-bottom:8px;">
                 <input type="number" id="food-cals" placeholder="kcal" min="0" inputmode="decimal"
                   oninput="updateMacroPreview()"/>
@@ -1120,6 +1369,7 @@
             </div>
 
             <button class="primary-btn" onclick="addFood()">+ Log Food</button>
+            <button class="add-to-db-btn" onclick="saveToCustomDB()">＋ Save to My Database</button>
           </div>
         </div>
       </div>
@@ -1162,10 +1412,20 @@
                 </div>
               </div>
               <div class="barcode-serving-row">
-                <label>Serving</label>
+                <label>Serving (g)</label>
                 <input type="number" id="bp-serving" value="100" min="1" max="9999"
                   inputmode="decimal" oninput="updateBarcodePreview()" style="width:80px;flex-shrink:0;"/>
                 <span id="bp-serving-unit">g</span>
+              </div>
+              <div class="bp-multiplier-row">
+                <label>Servings</label>
+                <div class="qty-stepper">
+                  <button class="qty-btn" onclick="changeBpQty(-1)">−</button>
+                  <input type="number" id="bp-qty" value="1" min="1" step="1"
+                    inputmode="decimal" style="width:52px;" oninput="updateBarcodePreview()"/>
+                  <button class="qty-btn" onclick="changeBpQty(1)">+</button>
+                </div>
+                <span style="font-size:0.65rem;color:var(--muted);font-family:'DM Mono',monospace;" id="bp-qty-total"></span>
               </div>
               <div class="barcode-macros-preview">
                 <div class="bmp cals"><div class="bmp-val" id="bp-cals">0</div><div class="bmp-label">kcal</div></div>
@@ -1224,6 +1484,43 @@
     </div>
 
   </div><!-- /tab-content -->
+
+<!-- EDIT ENTRY MODAL -->
+<div class="edit-modal-overlay" id="edit-modal-overlay" onclick="closeEditModal(event)">
+  <div class="edit-modal">
+    <div class="edit-modal-title">Edit Entry</div>
+    <input type="hidden" id="edit-meal"/>
+    <input type="hidden" id="edit-id"/>
+    <div>
+      <div style="font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Name</div>
+      <input type="text" id="edit-name" autocomplete="off"/>
+    </div>
+    <div class="edit-modal-macros">
+      <div>
+        <label>Calories (kcal)</label>
+        <input type="number" id="edit-cals" min="0" inputmode="decimal"/>
+      </div>
+      <div>
+        <label>Protein (g)</label>
+        <input type="number" id="edit-protein" min="0" inputmode="decimal"/>
+      </div>
+      <div>
+        <label>Carbs (g)</label>
+        <input type="number" id="edit-carbs" min="0" inputmode="decimal"/>
+      </div>
+      <div>
+        <label>Fat (g)</label>
+        <input type="number" id="edit-fat" min="0" inputmode="decimal"/>
+      </div>
+    </div>
+    <div class="edit-modal-actions">
+      <button class="btn-save" onclick="saveEditEntry()">Save Changes</button>
+      <button class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+      <button class="btn-delete" onclick="deleteEditEntry()">Delete</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- /app-shell -->
 
 <div class="toast" id="toast"></div>
@@ -1304,16 +1601,21 @@
   // ─── ADD FOOD ─────────────────────────────────────────────────
   function changeQty(delta) {
     const input = document.getElementById('food-qty');
-    const cur = parseFloat(input.value) || 100;
-    const next = Math.max(5, Math.round((cur + delta) / 5) * 5);
+    const cur = parseFloat(input.value) || 1;
+    const next = Math.max(0.25, Math.round((cur + delta) * 4) / 4);
     input.value = next;
     updateMacroPreview();
   }
 
+  function changeBpQty(delta) {
+    const input = document.getElementById('bp-qty');
+    const cur = parseInt(input.value) || 1;
+    input.value = Math.max(1, cur + delta);
+    updateBarcodePreview();
+  }
+
   function updateMacroPreview() {
-    // food-qty is in grams; base macro fields are per 100g
-    const grams = parseFloat(document.getElementById('food-qty').value) || 100;
-    const qty   = grams / 100;
+    const qty   = parseFloat(document.getElementById('food-qty').value) || 1;
     const cals  = parseFloat(document.getElementById('food-cals').value) || 0;
     const prot  = parseFloat(document.getElementById('food-protein').value) || 0;
     const carbs = parseFloat(document.getElementById('food-carbs').value) || 0;
@@ -1324,7 +1626,15 @@
     if (!cals && !prot && !carbs && !fat) { wrap.style.display = 'none'; return; }
     wrap.style.display = 'block';
 
-    const label = `Total for ${grams}g${name ? ' of ' + name : ''}`;
+    // Update serving label to reflect qty
+    const lbl = document.getElementById('qty-serving-label');
+    if (lbl) lbl.textContent = window._currentServingLabel
+      ? `× ${window._currentServingLabel}`
+      : '× serving';
+
+    const label = qty === 1
+      ? (name ? `Total for 1 × ${name}` : 'Total for 1 serving')
+      : (name ? `Total for ${qty} × ${name}` : `Total for ${qty} servings`);
     document.getElementById('macro-preview-label').textContent = label;
 
     document.getElementById('prev-cals').textContent  = Math.round(cals  * qty);
@@ -1336,8 +1646,7 @@
   function addFood(){
     const name  = document.getElementById('food-name').value.trim();
     const meal  = document.getElementById('meal-select').value;
-    const grams = parseFloat(document.getElementById('food-qty').value) || 100;
-    const ratio = grams / 100;
+    const qty   = parseFloat(document.getElementById('food-qty').value) || 1;
     const cals  = parseFloat(document.getElementById('food-cals').value) || 0;
     const prot  = parseFloat(document.getElementById('food-protein').value) || 0;
     const carbs = parseFloat(document.getElementById('food-carbs').value) || 0;
@@ -1345,7 +1654,7 @@
 
     if(!name || !cals){ showToast('Enter a name & calories!'); return; }
 
-    const entryName = grams !== 100 ? `${name} (${grams}g)` : name;
+    const entryName = qty !== 1 ? `${name} ×${qty}` : name;
 
     const logDate = getTodayStr();
     if(!data[logDate]) data[logDate]={};
@@ -1353,10 +1662,10 @@
     data[logDate][meal].push({
       id: Date.now(),
       name: entryName,
-      cals:    Math.round(cals  * ratio),
-      protein: parseFloat((prot  * ratio).toFixed(1)),
-      carbs:   parseFloat((carbs * ratio).toFixed(1)),
-      fat:     parseFloat((fat   * ratio).toFixed(1)),
+      cals:    Math.round(cals  * qty),
+      protein: parseFloat((prot  * qty).toFixed(1)),
+      carbs:   parseFloat((carbs * qty).toFixed(1)),
+      fat:     parseFloat((fat   * qty).toFixed(1)),
     });
 
     currentDate = logDate;
@@ -1366,11 +1675,15 @@
     ['food-name','food-cals','food-protein','food-carbs','food-fat'].forEach(id=>{
       document.getElementById(id).value='';
     });
-    document.getElementById('food-qty').value='100';
+    document.getElementById('food-qty').value = '1';
     document.getElementById('food-autofill-notice').classList.remove('visible');
-    const _si = document.getElementById('food-serving-info');
-    if(_si){ _si.style.display='none'; _si.textContent=''; }
     document.getElementById('macro-preview-wrap').style.display = 'none';
+    window._currentServingG = null;
+    window._currentServingLabel = null;
+    const _hint = document.getElementById('qty-serving-hint');
+    if (_hint) { _hint.style.display='none'; _hint.textContent=''; }
+    const _lbl = document.getElementById('qty-serving-label');
+    if (_lbl) _lbl.textContent = '× serving';
 
     showTab('today', document.querySelector('.nav-btn'));
   }
@@ -1432,6 +1745,8 @@
         items.forEach(f=>{
           const el=document.createElement('div');
           el.className='food-item';
+          el.style.cursor='pointer';
+          el.onclick=(e)=>{ if(!e.target.classList.contains('delete-btn')) openEditModal(meal,f.id); };
           el.innerHTML=`
             <span class="food-item-name">${f.name}</span>
             <div class="food-item-macros">
@@ -1440,7 +1755,7 @@
               <span class="macro-pill">${Math.round(f.fat)}F</span>
             </div>
             <span class="food-item-cal">${Math.round(f.cals)}</span>
-            <button class="delete-btn" onclick="deleteFood('${meal}',${f.id})">✕</button>
+            <button class="delete-btn" onclick="event.stopPropagation();deleteFood('${meal}',${f.id})">✕</button>
           `;
           grp.appendChild(el);
         });
@@ -1524,32 +1839,40 @@
 
   function updateBarcodePreview(){
     if(!barcodeProduct) return;
-    const r=(parseFloat(document.getElementById('bp-serving').value)||100)/100;
-    document.getElementById('bp-cals').textContent=Math.round(barcodeProduct.cals100*r);
-    document.getElementById('bp-prot').textContent=(barcodeProduct.protein100*r).toFixed(1)+'g';
-    document.getElementById('bp-carbs').textContent=(barcodeProduct.carbs100*r).toFixed(1)+'g';
-    document.getElementById('bp-fat').textContent=(barcodeProduct.fat100*r).toFixed(1)+'g';
+    const servingG = parseFloat(document.getElementById('bp-serving').value) || 100;
+    const qty      = parseInt(document.getElementById('bp-qty').value) || 1;
+    const r        = (servingG * qty) / 100;
+    document.getElementById('bp-cals').textContent  = Math.round(barcodeProduct.cals100*r);
+    document.getElementById('bp-prot').textContent  = (barcodeProduct.protein100*r).toFixed(1)+'g';
+    document.getElementById('bp-carbs').textContent = (barcodeProduct.carbs100*r).toFixed(1)+'g';
+    document.getElementById('bp-fat').textContent   = (barcodeProduct.fat100*r).toFixed(1)+'g';
+    const totalEl = document.getElementById('bp-qty-total');
+    if (totalEl) totalEl.textContent = qty > 1 ? `= ${servingG*qty}g total` : '';
   }
 
   function addBarcodeFood(){
     if(!barcodeProduct) return;
-    const r=(parseFloat(document.getElementById('bp-serving').value)||100)/100;
-    const meal=document.getElementById('bp-meal').value;
-    const logDate = getTodayStr();
+    const servingG = parseFloat(document.getElementById('bp-serving').value) || 100;
+    const qty      = parseInt(document.getElementById('bp-qty').value) || 1;
+    const r        = (servingG * qty) / 100;
+    const meal     = document.getElementById('bp-meal').value;
+    const logDate  = getTodayStr();
     if(!data[logDate]) data[logDate]={};
     if(!data[logDate][meal]) data[logDate][meal]=[];
+    const entryName = qty > 1 ? `${barcodeProduct.name} ×${qty}` : barcodeProduct.name;
     data[logDate][meal].push({
-      id:Date.now(), name:barcodeProduct.name,
-      cals:Math.round(barcodeProduct.cals100*r),
-      protein:parseFloat((barcodeProduct.protein100*r).toFixed(1)),
-      carbs:parseFloat((barcodeProduct.carbs100*r).toFixed(1)),
-      fat:parseFloat((barcodeProduct.fat100*r).toFixed(1)),
+      id:Date.now(), name:entryName,
+      cals:    Math.round(barcodeProduct.cals100*r),
+      protein: parseFloat((barcodeProduct.protein100*r).toFixed(1)),
+      carbs:   parseFloat((barcodeProduct.carbs100*r).toFixed(1)),
+      fat:     parseFloat((barcodeProduct.fat100*r).toFixed(1)),
     });
     currentDate = logDate;
     saveData(); render();
-    showToast(`${barcodeProduct.name} logged!`);
+    showToast(`${entryName} logged!`);
     barcodeProduct=null;
     document.getElementById('barcode-input').value='';
+    document.getElementById('bp-qty').value='1';
     setBarcodeState('idle');
     showTab('today', document.querySelector('.nav-btn'));
   }
@@ -1563,1214 +1886,1214 @@
   }
 
   // ─── FOOD DATABASE SEARCH ─────────────────────────────────────
-  // 1204 USDA-sourced foods. Instant, no network, works everywhere.
-  // Format: [name, kcal, protein_g, carbs_g, fat_g, serving_g, serving_label]
+  // 1204 USDA-sourced foods — instant, no network required.
+  // Format: [name, kcal, protein_g, carbs_g, fat_g]
 
   const _FOODS = [
-    ["Egg, whole, raw",   143,  12.6,   0.7,   9.5,   50, "1 large egg"],
-    ["Egg, whole, boiled",   155,  13.0,   1.1,  10.6,   50, "1 large egg"],
-    ["Egg, fried",   196,  13.6,   0.8,  14.8,   46, "1 large egg"],
-    ["Egg, scrambled",   149,  10.1,   1.6,  11.2,   61, "1 large egg"],
-    ["Egg white, raw",    52,  10.9,   0.7,   0.2,   33, "1 large white"],
-    ["Egg yolk, raw",   322,  15.9,   3.6,  26.5,   17, "1 large yolk"],
-    ["Chicken breast, roasted",   165,  31.0,   0.0,   3.6,  174, "1 medium breast"],
-    ["Chicken breast, raw",   120,  22.5,   0.0,   2.6,  174, "1 medium breast"],
-    ["Chicken thigh, roasted",   209,  26.0,   0.0,  10.9,  109, "1 thigh"],
-    ["Chicken thigh, raw",   119,  17.4,   0.0,   5.5,  109, "1 thigh"],
-    ["Chicken drumstick, roasted",   172,  28.3,   0.0,   5.7,   72, "1 drumstick"],
-    ["Chicken wing, roasted",   203,  30.5,   0.0,   8.1,   34, "1 wing"],
-    ["Chicken, rotisserie breast",   153,  28.0,   0.0,   3.9,  174, "1 breast"],
-    ["Chicken, rotisserie thigh",   192,  22.0,   0.0,  11.2,  109, "1 thigh"],
-    ["Ground turkey, 93/7",   170,  22.4,   0.0,   9.3,  100, "100g"],
-    ["Ground turkey, 85/15",   218,  22.4,   0.0,  14.0,  100, "100g"],
-    ["Turkey breast, roasted",   135,  30.1,   0.0,   1.0,   85, "3 oz"],
-    ["Turkey breast, deli",   104,  17.7,   2.5,   2.5,   56, "2 oz / 4 slices"],
-    ["Ground beef, 80/20, cooked",   254,  25.9,   0.0,  17.4,  100, "100g"],
-    ["Ground beef, 90/10, cooked",   196,  27.7,   0.0,  10.0,  100, "100g"],
-    ["Ground beef, 93/7, cooked",   174,  28.5,   0.0,   6.8,  100, "100g"],
-    ["Steak, sirloin, cooked",   207,  30.5,   0.0,   8.9,  170, "6 oz"],
-    ["Steak, ribeye, cooked",   291,  24.5,   0.0,  20.8,  170, "6 oz"],
-    ["Steak, filet mignon",   227,  30.5,   0.0,  11.5,  170, "6 oz"],
-    ["Roast beef, deli",   130,  18.6,   2.0,   5.0,   56, "2 oz / 4 slices"],
-    ["Bacon, cooked",   541,  37.0,   1.4,  42.0,   34, "3 strips"],
-    ["Ham, deli sliced",   107,  17.1,   1.6,   3.7,   56, "2 oz"],
-    ["Pork chop, cooked",   231,  25.5,   0.0,  13.9,  100, "1 chop"],
-    ["Pork tenderloin, cooked",   166,  29.9,   0.0,   4.4,   85, "3 oz"],
-    ["Sausage, pork, cooked",   325,  17.5,   1.8,  28.0,   68, "1 link"],
-    ["Sausage, Italian, cooked",   304,  19.0,   2.8,  24.0,   85, "1 link"],
-    ["Hot dog, beef",   290,  11.0,   3.8,  26.2,   45, "1 hot dog"],
-    ["Salmon, Atlantic, cooked",   206,  28.8,   0.0,   9.3,  154, "1 fillet"],
-    ["Salmon, Atlantic, raw",   142,  19.8,   0.0,   6.3,  154, "1 fillet"],
-    ["Tuna, canned in water",   116,  25.5,   0.0,   0.8,  140, "1 can drained"],
-    ["Tuna, canned in oil",   198,  29.1,   0.0,   8.2,  140, "1 can drained"],
-    ["Tuna, fresh, cooked",   184,  30.0,   0.0,   6.3,  154, "1 fillet"],
-    ["Shrimp, cooked",    99,  24.0,   0.2,   0.3,   85, "12 large shrimp"],
-    ["Tilapia, cooked",   128,  26.2,   0.0,   2.7,  154, "1 fillet"],
-    ["Cod, cooked",   105,  22.8,   0.0,   0.9,  180, "1 fillet"],
-    ["Halibut, cooked",   140,  27.2,   0.0,   2.9,  159, "1 fillet"],
-    ["Sardines, canned in oil",   208,  24.6,   0.0,  11.5,   92, "1 can"],
-    ["Milk, whole",    61,   3.2,   4.8,   3.3,  244, "1 cup"],
-    ["Milk, 2%",    50,   3.4,   4.8,   2.0,  244, "1 cup"],
-    ["Milk, 1%",    42,   3.4,   5.0,   1.0,  244, "1 cup"],
-    ["Milk, skim",    34,   3.4,   5.0,   0.1,  245, "1 cup"],
-    ["Greek yogurt, 0% plain",    59,  10.0,   3.6,   0.4,  227, "1 container"],
-    ["Greek yogurt, 2% plain",    73,   9.9,   3.8,   1.9,  227, "1 container"],
-    ["Greek yogurt, whole plain",    97,   9.0,   3.8,   5.0,  227, "1 container"],
-    ["Yogurt, plain low-fat",    63,   5.3,   7.0,   1.6,  227, "1 container"],
-    ["Cheddar cheese",   403,  25.0,   1.3,  33.3,   28, "1 oz / 1 slice"],
-    ["Mozzarella, part-skim",   280,  28.0,   2.2,  17.1,   28, "1 oz"],
-    ["Mozzarella, whole milk",   300,  22.2,   2.2,  22.4,   28, "1 oz"],
-    ["Parmesan, grated",   431,  38.5,   4.1,  28.6,    5, "1 tbsp"],
-    ["Swiss cheese",   380,  26.9,   5.4,  27.8,   28, "1 slice"],
-    ["American cheese",   371,  16.1,   8.9,  30.6,   28, "1 slice"],
-    ["Cream cheese",   342,   6.0,   4.1,  34.0,   29, "2 tbsp"],
-    ["Cottage cheese, 1%",    72,  12.4,   2.7,   1.0,  226, "1 cup"],
-    ["Cottage cheese, 2%",    86,  11.1,   3.4,   2.3,  226, "1 cup"],
-    ["Butter",   717,   0.9,   0.1,  81.1,   14, "1 tbsp"],
-    ["Sour cream",   198,   2.4,   4.6,  19.4,   28, "2 tbsp"],
-    ["Heavy cream",   340,   2.8,   2.8,  36.1,   15, "1 tbsp"],
-    ["Half and half",   130,   3.0,   4.3,  11.5,   30, "2 tbsp"],
-    ["White rice, cooked",   130,   2.7,  28.2,   0.3,  186, "1 cup"],
-    ["Brown rice, cooked",   123,   2.7,  25.6,   1.0,  195, "1 cup"],
-    ["Jasmine rice, cooked",   129,   2.7,  28.0,   0.3,  186, "1 cup"],
-    ["Oats, dry rolled",   389,  17.0,  66.3,   6.9,   40, "½ cup dry"],
-    ["Oatmeal, cooked",    71,   2.5,  12.0,   1.5,  234, "1 cup"],
-    ["Granola",   471,  10.6,  64.0,  20.3,   58, "½ cup"],
-    ["Pasta, white, cooked",   158,   5.8,  30.9,   0.9,  140, "1 cup"],
-    ["Pasta, whole wheat, cooked",   149,   5.5,  31.1,   0.6,  140, "1 cup"],
-    ["White bread",   265,   9.0,  49.4,   3.2,   25, "1 slice"],
-    ["Whole wheat bread",   247,  13.0,  43.1,   3.5,   28, "1 slice"],
-    ["Sourdough bread",   260,   9.6,  50.0,   1.9,   56, "1 slice"],
-    ["Bagel, plain",   271,  10.3,  53.0,   1.7,  105, "1 bagel"],
-    ["English muffin",   227,   8.0,  44.0,   1.7,   57, "1 muffin"],
-    ["Tortilla, flour",   312,   8.0,  52.0,   7.6,   45, "1 medium tortilla"],
-    ["Tortilla, corn",   218,   5.7,  45.9,   2.7,   26, "1 small tortilla"],
-    ["Quinoa, cooked",   120,   4.4,  21.3,   1.9,  185, "1 cup"],
-    ["Couscous, cooked",   112,   3.8,  23.2,   0.2,  157, "1 cup"],
-    ["Crackers, whole wheat",   422,   9.4,  66.8,  14.3,   16, "5 crackers"],
-    ["Rice cakes, plain",   387,   8.2,  81.6,   3.1,    9, "1 rice cake"],
-    ["Pretzels",   380,   9.5,  80.0,   3.7,   28, "1 oz"],
-    ["Corn tortilla chips",   489,   6.5,  63.5,  24.0,   28, "1 oz / ~12 chips"],
-    ["Potato chips",   536,   7.0,  53.0,  34.6,   28, "1 oz / ~15 chips"],
-    ["Popcorn, air-popped",   387,  13.0,  77.9,   4.5,    8, "1 cup"],
-    ["Potato, baked",    93,   2.5,  21.2,   0.1,  173, "1 medium potato"],
-    ["Potato, boiled",    87,   1.9,  20.1,   0.1,  136, "1 medium potato"],
-    ["Sweet potato, cooked",    90,   2.0,  20.7,   0.1,  100, "½ medium"],
-    ["French fries",   312,   3.4,  41.4,  15.0,  117, "medium serving"],
-    ["Mashed potatoes",   113,   2.0,  17.0,   4.2,  210, "½ cup"],
-    ["Broccoli, raw",    34,   2.8,   6.6,   0.4,   91, "1 cup chopped"],
-    ["Broccoli, steamed",    35,   2.4,   7.2,   0.4,  156, "1 cup"],
-    ["Spinach, raw",    23,   2.9,   3.6,   0.4,   30, "1 cup"],
-    ["Spinach, cooked",    41,   5.4,   6.8,   0.5,  180, "1 cup"],
-    ["Kale, raw",    49,   4.3,   8.8,   0.9,   67, "1 cup chopped"],
-    ["Lettuce, romaine",    17,   1.2,   3.3,   0.3,   47, "1 cup shredded"],
-    ["Lettuce, iceberg",    14,   0.9,   3.0,   0.1,   72, "1 cup shredded"],
-    ["Carrot, raw",    41,   0.9,   9.6,   0.2,   61, "1 medium carrot"],
-    ["Tomato, raw",    18,   0.9,   3.9,   0.2,  123, "1 medium tomato"],
-    ["Cucumber, raw",    15,   0.7,   3.6,   0.1,  119, "1 medium cucumber"],
-    ["Bell pepper, red",    31,   1.0,   6.0,   0.3,  119, "1 medium pepper"],
-    ["Bell pepper, green",    20,   0.9,   4.6,   0.2,  119, "1 medium pepper"],
-    ["Onion, raw",    40,   1.1,   9.3,   0.1,  110, "1 medium onion"],
-    ["Garlic, raw",   149,   6.4,  33.1,   0.5,    3, "1 clove"],
-    ["Corn, cooked",    96,   3.4,  21.0,   1.5,   77, "½ cup"],
-    ["Peas, green, cooked",    84,   5.4,  15.6,   0.2,  160, "1 cup"],
-    ["Edamame, cooked",   122,  11.9,   8.9,   5.2,  155, "1 cup in shell"],
-    ["Mushrooms, raw",    22,   3.1,   3.3,   0.3,   70, "1 cup sliced"],
-    ["Zucchini, raw",    17,   1.2,   3.1,   0.3,  113, "1 medium"],
-    ["Celery, raw",    16,   0.7,   3.0,   0.2,  101, "2 stalks"],
-    ["Cauliflower, raw",    25,   2.0,   5.3,   0.3,  107, "1 cup"],
-    ["Asparagus, cooked",    22,   2.4,   4.1,   0.2,   90, "5 spears"],
-    ["Green beans, cooked",    35,   1.9,   7.9,   0.1,  125, "1 cup"],
-    ["Black beans, cooked",   132,   8.9,  23.7,   0.5,  172, "1 cup"],
-    ["Chickpeas, cooked",   164,   8.9,  27.4,   2.6,  164, "1 cup"],
-    ["Lentils, cooked",   116,   9.0,  20.1,   0.4,  198, "1 cup"],
-    ["Kidney beans, cooked",   127,   8.7,  22.8,   0.5,  177, "1 cup"],
-    ["Pinto beans, cooked",   143,   9.0,  26.2,   0.7,  171, "1 cup"],
-    ["Tofu, firm",    76,   8.1,   1.9,   4.2,  126, "3 oz"],
-    ["Tofu, silken",    55,   4.8,   2.0,   2.7,  126, "3 oz"],
-    ["Banana",    89,   1.1,  22.8,   0.3,  118, "1 medium banana"],
-    ["Apple, raw",    52,   0.3,  13.8,   0.2,  182, "1 medium apple"],
-    ["Orange, raw",    47,   0.9,  11.8,   0.1,  131, "1 medium orange"],
-    ["Strawberries, raw",    32,   0.7,   7.7,   0.3,  152, "1 cup whole"],
-    ["Blueberries, raw",    57,   0.7,  14.5,   0.3,  148, "1 cup"],
-    ["Raspberries, raw",    52,   1.2,  11.9,   0.7,  123, "1 cup"],
-    ["Grapes, raw",    69,   0.7,  18.1,   0.2,   92, "½ cup"],
-    ["Watermelon, raw",    30,   0.6,   7.6,   0.2,  280, "1 cup diced"],
-    ["Pineapple, raw",    50,   0.5,  13.1,   0.1,  165, "1 cup chunks"],
-    ["Mango, raw",    60,   0.8,  15.0,   0.4,  165, "1 cup"],
-    ["Peach, raw",    39,   0.9,   9.5,   0.3,  150, "1 medium peach"],
-    ["Pear, raw",    57,   0.4,  15.2,   0.1,  178, "1 medium pear"],
-    ["Grapefruit, raw",    42,   0.8,  10.7,   0.1,  236, "1 medium half"],
-    ["Cherries, raw",    63,   1.1,  16.0,   0.2,  117, "½ cup"],
-    ["Avocado",   160,   2.0,   8.5,  14.7,  150, "½ avocado"],
-    ["Almonds",   579,  21.2,  21.7,  49.9,   28, "1 oz / 23 almonds"],
-    ["Peanuts, dry roasted",   585,  23.7,  21.5,  49.7,   28, "1 oz"],
-    ["Peanut butter, smooth",   588,  25.1,  20.1,  50.4,   32, "2 tbsp"],
-    ["Peanut butter, crunchy",   598,  22.2,  22.3,  51.4,   32, "2 tbsp"],
-    ["Walnuts",   654,  15.2,  13.7,  65.2,   28, "1 oz / 14 halves"],
-    ["Cashews, dry roasted",   553,  15.3,  32.7,  43.9,   28, "1 oz / 18 cashews"],
-    ["Pistachios",   567,  20.6,  27.7,  45.8,   28, "1 oz / 49 nuts"],
-    ["Sunflower seeds",   584,  20.8,  20.0,  51.5,   28, "1 oz"],
-    ["Chia seeds",   486,  16.5,  42.1,  30.7,   28, "2 tbsp"],
-    ["Flax seeds",   534,  18.3,  28.9,  42.2,   10, "1 tbsp"],
-    ["Olive oil",   884,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["Coconut oil",   862,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["Vegetable oil",   884,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["Mayonnaise",   680,   1.0,   0.6,  74.9,   14, "1 tbsp"],
-    ["Ketchup",   112,   1.9,  27.8,   0.1,   17, "1 tbsp"],
-    ["Mustard",    66,   4.4,   5.8,   4.0,    5, "1 tsp"],
-    ["Soy sauce",    53,   5.6,   4.9,   0.6,   16, "1 tbsp"],
-    ["Honey",   304,   0.3,  82.4,   0.0,   21, "1 tbsp"],
-    ["Maple syrup",   260,   0.0,  67.0,   0.1,   20, "1 tbsp"],
-    ["Ranch dressing",   475,   1.3,   7.1,  50.0,   30, "2 tbsp"],
-    ["Vinaigrette dressing",   286,   0.2,   4.6,  30.0,   30, "2 tbsp"],
-    ["Hummus",   166,   7.9,  14.3,   9.6,   30, "2 tbsp"],
-    ["Salsa",    36,   1.6,   7.4,   0.2,   32, "2 tbsp"],
-    ["Guacamole",   150,   2.0,   8.6,  13.2,   30, "2 tbsp"],
-    ["Orange juice",    45,   0.7,  10.4,   0.2,  248, "1 cup"],
-    ["Apple juice",    46,   0.1,  11.3,   0.1,  248, "1 cup"],
-    ["Coffee, black",     2,   0.3,   0.0,   0.0,  237, "1 cup"],
-    ["Coffee, latte, whole milk",    54,   3.0,   5.5,   2.2,  226, "8 oz"],
-    ["Tea, unsweetened",     1,   0.0,   0.3,   0.0,  237, "1 cup"],
-    ["Soda, cola",    37,   0.0,   9.6,   0.0,  355, "12 oz can"],
-    ["Almond milk, unsweetened",    15,   0.6,   0.6,   1.2,  240, "1 cup"],
-    ["Oat milk",    45,   1.3,   6.7,   1.5,  240, "1 cup"],
-    ["Protein powder, whey",   352,  75.0,   9.6,   3.2,   32, "1 scoop"],
-    ["Protein powder, plant-based",   340,  68.0,  14.0,   4.0,   34, "1 scoop"],
-    ["Protein bar, average",   360,  20.0,  40.0,  12.0,   60, "1 bar"],
-    ["Protein shake, premade",   160,  30.0,   8.0,   2.5,  330, "11 oz bottle"],
-    ["Burger, beef, plain",   272,  14.4,  30.6,  11.8,  100, "1 burger"],
-    ["Cheeseburger",   303,  15.6,  32.4,  12.6,  113, "1 burger"],
-    ["Pizza, cheese",   266,  11.4,  33.6,   9.8,  107, "1 slice"],
-    ["Pizza, pepperoni",   298,  12.1,  33.0,  13.2,  107, "1 slice"],
-    ["Chicken nuggets",   296,  15.0,  20.0,  18.0,   95, "6 pieces"],
-    ["Fried chicken, breast",   246,  22.1,  12.2,  12.0,  140, "1 piece"],
-    ["Burrito, chicken rice",   163,  10.7,  19.4,   4.2,  100, "100g"],
-    ["Caesar salad w/ dressing",   158,   4.0,   8.3,  13.0,  150, "side salad"],
-    ["Sushi, salmon roll",   204,   8.0,  30.0,   6.0,  100, "100g"],
-    ["Dark chocolate, 70%",   598,   7.8,  45.9,  42.6,   40, "4 squares / 1.5 oz"],
-    ["Milk chocolate",   535,   7.7,  59.4,  29.7,   40, "4 squares"],
-    ["Ice cream, vanilla",   207,   3.5,  23.6,  11.0,   66, "½ cup"],
-    ["Granola bar",   471,   7.6,  64.4,  19.8,   47, "1 bar"],
-    ["Jam / jelly",   278,   0.4,  68.9,   0.1,   20, "1 tbsp"],
-    ["Beef, brisket, cooked",   259,  25.9,   0.0,  16.8,   85, "3 oz"],
-    ["Beef, chuck roast, cooked",   235,  29.0,   0.0,  12.8,   85, "3 oz"],
-    ["Beef, flank steak, cooked",   210,  29.7,   0.0,   9.7,   85, "3 oz"],
-    ["Beef, skirt steak, cooked",   218,  27.9,   0.0,  11.2,   85, "3 oz"],
-    ["Beef, T-bone steak, cooked",   247,  26.8,   0.0,  15.0,  170, "6 oz"],
-    ["Beef, porterhouse steak, cooked",   252,  26.4,   0.0,  15.9,  170, "6 oz"],
-    ["Beef, New York strip, cooked",   234,  29.7,   0.0,  12.6,  170, "6 oz"],
-    ["Beef, short ribs, cooked",   381,  20.6,   0.0,  32.9,   85, "3 oz"],
-    ["Beef, liver, cooked",   175,  27.0,   5.1,   4.9,   85, "3 oz"],
-    ["Beef, tongue, cooked",   284,  21.5,   0.0,  21.9,   85, "3 oz"],
-    ["Beef, heart, cooked",   175,  28.1,   0.1,   6.0,   85, "3 oz"],
-    ["Beef, kidney, cooked",   151,  24.4,   1.0,   4.7,   85, "3 oz"],
-    ["Beef, ground, extra lean, cooked",   155,  28.3,   0.0,   4.8,  100, "100g"],
-    ["Beef jerky",   410,  33.2,  11.1,  25.6,   28, "1 oz"],
-    ["Beef, corned, cooked",   251,  18.2,   0.5,  19.0,   85, "3 oz"],
-    ["Beef hot dog",   290,  11.0,   3.8,  26.2,   45, "1 hot dog"],
-    ["Beef bologna",   310,  11.3,   4.3,  27.4,   28, "1 slice"],
-    ["Beef salami",   389,  18.7,   2.5,  33.3,   28, "1 oz"],
-    ["Beef, prime rib, cooked",   330,  23.0,   0.0,  26.0,  170, "6 oz"],
-    ["Beef, meatball, cooked",   236,  19.6,   5.5,  14.8,   45, "1 large meatball"],
-    ["Beef, meat loaf",   195,  16.0,  10.0,  10.0,  100, "1 slice"],
-    ["Beef, pot pie",   197,   7.4,  17.9,  10.7,  100, "100g"],
-    ["Beef stew, canned",    72,   5.1,   7.9,   2.0,  100, "100g"],
-    ["Beef, taco meat, cooked",   205,  20.5,   2.8,  12.6,  100, "100g"],
-    ["Beef, pastrami",   254,  18.1,   2.6,  18.9,  100, "100g"],
-    ["Pepperoni",   504,  21.3,   0.8,  44.9,   28, "14 slices"],
-    ["Salami, hard",   407,  22.9,   2.1,  34.4,   28, "4 slices"],
-    ["Pork belly, cooked",   518,   9.3,   0.0,  53.0,   85, "3 oz"],
-    ["Pork ribs, baby back, cooked",   292,  26.0,   0.0,  20.2,  113, "3 ribs"],
-    ["Pork ribs, spare, cooked",   315,  18.7,   0.0,  26.4,  113, "2 ribs"],
-    ["Pork shoulder, cooked",   259,  24.0,   0.0,  17.2,   85, "3 oz"],
-    ["Pork loin, cooked",   195,  27.9,   0.0,   8.8,   85, "3 oz"],
-    ["Pork, ground, cooked",   272,  22.0,   0.0,  20.0,  100, "100g"],
-    ["Canadian bacon",   185,  19.7,   1.4,  10.9,   56, "2 oz"],
-    ["Prosciutto",   267,  25.9,   0.3,  17.6,   28, "2-3 slices"],
-    ["Pancetta, cooked",   457,  22.0,   1.5,  40.2,   28, "1 oz"],
-    ["Chorizo, cooked",   455,  24.1,   1.9,  38.3,   85, "1 link"],
-    ["Andouille sausage",   265,  14.3,   2.3,  21.9,   85, "1 link"],
-    ["Bratwurst, cooked",   333,  13.5,   2.8,  29.0,   85, "1 link"],
-    ["Kielbasa, cooked",   325,  14.4,   2.9,  28.3,   85, "3 oz"],
-    ["Liverwurst",   307,  14.1,   2.6,  26.7,   56, "2 oz"],
-    ["Spam, canned",   309,  13.3,   3.1,  26.4,   56, "2 oz"],
-    ["Ham, bone-in, cooked",   163,  21.0,   0.0,   8.4,   85, "3 oz"],
-    ["Pork crackling / chicharrones",   544,  61.3,   0.0,  32.5,   28, "1 oz"],
-    ["Pork, pulled, BBQ",   200,  19.3,   8.0,   9.2,  100, "100g"],
-    ["Lamb, leg, cooked",   217,  28.5,   0.0,  11.1,   85, "3 oz"],
-    ["Lamb, rack, cooked",   294,  25.0,   0.0,  21.0,   85, "3 ribs"],
-    ["Lamb, shoulder, cooked",   246,  25.5,   0.0,  15.3,   85, "3 oz"],
-    ["Lamb, loin chop, cooked",   260,  28.9,   0.0,  15.5,   85, "1 chop"],
-    ["Lamb, ground, cooked",   283,  24.4,   0.0,  20.3,  100, "100g"],
-    ["Lamb, shank, cooked",   243,  29.4,   0.0,  13.3,  200, "1 shank"],
-    ["Veal, loin, cooked",   196,  30.4,   0.0,   7.9,   85, "3 oz"],
-    ["Veal, ground, cooked",   172,  25.8,   0.0,   7.0,  100, "100g"],
-    ["Venison, ground, cooked",   187,  30.2,   0.0,   6.9,  100, "100g"],
-    ["Venison, roast, cooked",   158,  30.1,   0.0,   3.2,   85, "3 oz"],
-    ["Bison, ground, cooked",   218,  29.0,   0.0,  11.4,  100, "100g"],
-    ["Bison, steak, cooked",   177,  30.3,   0.0,   5.6,   85, "3 oz"],
-    ["Duck, roasted, meat only",   201,  23.5,   0.0,  11.2,   85, "3 oz"],
-    ["Duck, roasted, with skin",   337,  19.0,   0.0,  28.4,   85, "3 oz"],
-    ["Goose, roasted",   305,  25.2,   0.0,  21.9,   85, "3 oz"],
-    ["Rabbit, roasted",   197,  29.1,   0.0,   8.0,   85, "3 oz"],
-    ["Quail, cooked",   234,  25.1,   0.0,  14.1,  100, "1 quail"],
-    ["Elk, roasted",   146,  30.2,   0.0,   2.0,   85, "3 oz"],
-    ["Wild boar, cooked",   160,  28.3,   0.0,   4.8,   85, "3 oz"],
-    ["Chicken breast, breaded, fried",   256,  21.7,  11.1,  13.2,  140, "1 piece"],
-    ["Chicken breast, grilled",   165,  32.0,   0.0,   3.0,  174, "1 breast"],
-    ["Chicken breast, poached",   148,  28.8,   0.0,   3.3,  174, "1 breast"],
-    ["Chicken breast, smoked",   170,  30.0,   2.0,   4.0,   85, "3 oz"],
-    ["Chicken breast, stuffed",   185,  23.0,   3.5,   8.5,  100, "100g"],
-    ["Chicken livers, cooked",   167,  24.5,   0.9,   6.5,  100, "100g"],
-    ["Chicken gizzards, cooked",   154,  26.0,   0.4,   4.3,  100, "100g"],
-    ["Chicken hearts, cooked",   185,  26.0,   0.1,   8.7,  100, "100g"],
-    ["Chicken, dark meat, roasted",   205,  27.4,   0.0,  10.0,   85, "3 oz"],
-    ["Chicken, whole, roasted",   215,  27.3,   0.0,  11.1,   85, "3 oz"],
-    ["Chicken salad, prepared",   220,  12.3,   3.8,  17.5,  100, "½ cup"],
-    ["Chicken soup, cream of, canned",    69,   1.9,   7.9,   3.3,  100, "100g"],
-    ["Chicken noodle soup, canned",    33,   2.3,   4.0,   0.9,  100, "100g"],
-    ["Chicken stir-fry, prepared",   137,  11.5,   7.2,   6.7,  100, "100g"],
-    ["Chicken tikka masala, prepared",   130,   9.0,   8.0,   6.5,  100, "100g"],
-    ["Chicken alfredo, prepared",   188,  10.7,  15.2,   9.8,  100, "100g"],
-    ["Chicken parmesan, prepared",   213,  18.0,  12.0,  10.0,  100, "100g"],
-    ["Chicken fajita, prepared",   147,  12.0,  10.0,   6.5,  100, "100g"],
-    ["Chicken pot pie, prepared",   211,   7.3,  20.0,  11.4,  100, "100g"],
-    ["General Tso's chicken",   205,  14.0,  14.0,  10.0,  100, "100g"],
-    ["Chicken teriyaki, prepared",   155,  17.0,   8.5,   5.5,  100, "100g"],
-    ["Buffalo wings, fried",   288,  24.0,   4.0,  19.5,  100, "3 wings"],
-    ["Turkey, whole, roasted",   189,  28.6,   0.0,   7.4,   85, "3 oz"],
-    ["Turkey, dark meat, roasted",   221,  30.1,   0.0,  11.5,   85, "3 oz"],
-    ["Turkey sausage, cooked",   196,  20.4,   2.0,  11.3,   85, "1 link"],
-    ["Turkey salami",   189,  16.3,   2.0,  12.1,   57, "2 oz"],
-    ["Turkey pepperoni",   332,  28.6,   2.2,  22.5,   28, "17 slices"],
-    ["Turkey, ground, extra lean",   148,  24.7,   0.0,   5.2,  100, "100g"],
-    ["Turkey hot dog",   190,  11.7,   3.9,  14.1,   45, "1 hot dog"],
-    ["Turkey burger, cooked",   196,  23.5,   0.0,  11.2,  113, "1 patty"],
-    ["Turkey bacon, cooked",   218,  27.3,   1.6,  11.1,   28, "2 strips"],
-    ["Salmon, sockeye, cooked",   216,  27.3,   0.0,  11.0,  154, "1 fillet"],
-    ["Salmon, smoked",   117,  18.3,   0.0,   4.3,   85, "3 oz"],
-    ["Salmon, pink, canned",   136,  22.0,   0.0,   5.1,   85, "3 oz"],
-    ["Tuna, yellowfin, cooked",   139,  30.0,   0.0,   1.1,  154, "1 fillet"],
-    ["Tuna, bluefin, raw",   144,  23.3,   0.0,   4.9,   85, "3 oz"],
-    ["Mahi-mahi, cooked",   109,  23.7,   0.0,   0.9,  154, "1 fillet"],
-    ["Swordfish, cooked",   155,  25.4,   0.0,   5.1,  154, "1 fillet"],
-    ["Sea bass, cooked",   124,  23.6,   0.0,   2.6,  154, "1 fillet"],
-    ["Snapper, cooked",   128,  26.3,   0.0,   1.7,  154, "1 fillet"],
-    ["Flounder, cooked",   101,  20.8,   0.0,   1.3,  127, "1 fillet"],
-    ["Sole, cooked",    90,  19.4,   0.0,   1.2,  127, "1 fillet"],
-    ["Catfish, cooked",   135,  21.5,   0.0,   5.1,  159, "1 fillet"],
-    ["Perch, cooked",   117,  24.9,   0.0,   1.3,  100, "100g"],
-    ["Trout, cooked",   190,  26.6,   0.0,   8.5,  159, "1 fillet"],
-    ["Rainbow trout, cooked",   168,  25.4,   0.0,   6.6,  159, "1 fillet"],
-    ["Haddock, cooked",   112,  24.2,   0.0,   0.9,  150, "1 fillet"],
-    ["Pollock, cooked",    92,  19.4,   0.0,   0.9,  100, "100g"],
-    ["Mackerel, Atlantic, cooked",   262,  23.9,   0.0,  17.8,  100, "100g"],
-    ["Herring, Atlantic, cooked",   203,  23.0,   0.0,  11.5,  100, "100g"],
-    ["Anchovies, canned in oil",   210,  29.0,   0.0,   9.7,   14, "5 anchovies"],
-    ["Anchovies, raw",   131,  20.4,   0.0,   4.8,   14, "5 anchovies"],
-    ["Tilapia, raw",    96,  20.1,   0.0,   1.7,  154, "1 fillet"],
-    ["Grouper, cooked",   118,  24.8,   0.0,   1.3,  154, "1 fillet"],
-    ["Striped bass, cooked",   124,  22.7,   0.0,   3.0,  100, "100g"],
-    ["Carp, cooked",   162,  22.9,   0.0,   7.2,  100, "100g"],
-    ["Eel, cooked",   236,  23.7,   0.0,  15.0,   85, "3 oz"],
-    ["Pike, cooked",   113,  24.7,   0.0,   0.9,  100, "100g"],
-    ["Monkfish, cooked",    97,  18.6,   0.0,   2.0,  100, "100g"],
-    ["Pangasius, cooked",   105,  16.9,   1.0,   3.6,  100, "100g"],
-    ["Basa fillet, cooked",   105,  16.9,   1.0,   3.6,  100, "100g"],
-    ["Tuna salad, prepared",   187,  16.4,   9.0,   9.5,  100, "½ cup"],
-    ["Shrimp, raw",    71,  13.6,   0.9,   1.0,   85, "12 large shrimp"],
-    ["Lobster, cooked",    98,  20.5,   1.3,   0.6,  145, "1 tail"],
-    ["Crab, blue, cooked",    97,  19.4,   0.0,   1.8,   85, "3 oz"],
-    ["Crab, Dungeness, cooked",   110,  22.3,   0.9,   1.2,   85, "3 oz"],
-    ["Crab, king, cooked",    97,  18.6,   0.0,   1.5,   85, "3 oz"],
-    ["Crayfish, cooked",    87,  17.5,   0.0,   1.4,   85, "3 oz"],
-    ["Scallops, cooked",   111,  20.5,   5.4,   0.5,   85, "3 large scallops"],
-    ["Scallops, raw",    88,  16.8,   2.4,   0.8,   85, "3 large scallops"],
-    ["Oysters, cooked",   102,  11.2,   6.3,   2.7,   85, "6 medium oysters"],
-    ["Oysters, raw",    69,   8.0,   4.2,   2.0,   85, "6 medium oysters"],
-    ["Clams, cooked",   148,  25.5,   5.1,   2.0,   85, "3 oz"],
-    ["Mussels, cooked",   172,  23.8,   7.4,   4.5,   85, "12 mussels"],
-    ["Octopus, cooked",   164,  29.8,   4.4,   2.1,   85, "3 oz"],
-    ["Squid, cooked",   175,  17.9,   7.8,   7.4,   85, "3 oz"],
-    ["Squid, raw",    92,  15.6,   3.1,   1.4,   85, "3 oz"],
-    ["Abalone, cooked",   105,  17.1,   6.0,   0.8,  100, "100g"],
-    ["Eggs, Benedict, prepared",   194,   9.7,   8.9,  13.0,  250, "1 serving"],
-    ["Egg, quail, whole",   158,  13.1,   0.4,  11.1,    9, "1 quail egg"],
-    ["Egg, duck, whole",   185,  12.8,   1.4,  13.8,   70, "1 duck egg"],
-    ["Egg, goose, whole",   185,  13.9,   1.4,  13.3,  144, "1 goose egg"],
-    ["Frittata, egg and vegetable",   127,   9.1,   2.5,   8.9,  100, "100g slice"],
-    ["Omelet, plain",   154,  10.6,   0.5,  12.0,  100, "1 omelet"],
-    ["Deviled egg",   196,  11.0,   0.9,  16.6,   30, "1 half"],
-    ["Milk, chocolate, whole",    83,   3.4,  11.4,   3.4,  244, "1 cup"],
-    ["Milk, chocolate, reduced fat",    72,   3.4,  11.5,   2.0,  244, "1 cup"],
-    ["Milk, condensed, sweetened",   321,   7.9,  54.4,   8.7,  306, "1 cup"],
-    ["Milk, evaporated, whole",   134,   6.8,  10.0,   7.6,  252, "1 cup"],
-    ["Milk, evaporated, skim",    78,   7.6,  11.3,   0.2,  256, "1 cup"],
-    ["Milk, goat, whole",    69,   3.6,   4.5,   4.1,  244, "1 cup"],
-    ["Milk, sheep, whole",   108,   5.9,   4.8,   7.0,  245, "1 cup"],
-    ["Buttermilk, low fat",    40,   3.3,   4.8,   0.9,  245, "1 cup"],
-    ["Kefir, plain, low fat",    41,   3.5,   4.5,   0.9,  244, "1 cup"],
-    ["Kefir, plain, whole milk",    61,   3.3,   4.5,   3.5,  244, "1 cup"],
-    ["Whipped cream",   257,   2.1,   7.1,  22.2,   15, "2 tbsp"],
-    ["Crème fraîche",   362,   2.4,   2.9,  37.7,   28, "2 tbsp"],
-    ["Mascarpone",   429,   4.4,   4.4,  43.5,   30, "2 tbsp"],
-    ["Ricotta, part-skim",   138,  10.0,   5.1,   7.9,   62, "¼ cup"],
-    ["Ricotta, whole milk",   174,   9.7,   4.5,  12.5,   62, "¼ cup"],
-    ["Brie cheese",   334,  20.8,   0.5,  27.7,   28, "1 oz"],
-    ["Camembert cheese",   300,  19.8,   0.5,  24.3,   28, "1 oz"],
-    ["Feta cheese",   264,  14.2,   4.1,  21.3,   28, "¼ cup crumbled"],
-    ["Goat cheese, soft",   268,  18.5,   2.0,  21.1,   28, "1 oz"],
-    ["Gouda cheese",   356,  24.9,   2.2,  27.4,   28, "1 slice"],
-    ["Gruyere cheese",   413,  29.8,   0.4,  32.3,   28, "1 oz"],
-    ["Havarti cheese",   371,  21.8,   2.0,  30.6,   28, "1 slice"],
-    ["Manchego cheese",   395,  26.0,   0.0,  32.0,   28, "1 oz"],
-    ["Muenster cheese",   368,  23.4,   1.1,  30.0,   28, "1 slice"],
-    ["Pepper jack cheese",   373,  22.4,   1.8,  30.5,   28, "1 slice"],
-    ["Provolone cheese",   352,  25.6,   2.1,  26.6,   28, "1 slice"],
-    ["Romano cheese",   387,  31.8,   3.6,  26.9,    5, "1 tbsp grated"],
-    ["Colby cheese",   394,  23.8,   2.6,  32.1,   28, "1 oz"],
-    ["Monterey Jack cheese",   373,  24.5,   0.7,  30.3,   28, "1 slice"],
-    ["Limburger cheese",   327,  20.1,   0.5,  27.3,  100, "100g"],
-    ["Blue cheese",   353,  21.4,   2.3,  28.7,   28, "1 oz"],
-    ["Gorgonzola cheese",   358,  22.0,   2.3,  29.4,   28, "1 oz"],
-    ["Velveeta processed cheese",   320,  16.4,  10.0,  22.4,   41, "1.5 oz"],
-    ["Cheese sauce",   196,   5.4,   8.5,  15.7,   60, "¼ cup"],
-    ["Soy milk, unsweetened",    33,   2.9,   1.8,   1.8,  244, "1 cup"],
-    ["Rice milk",    47,   0.3,   9.2,   1.0,  244, "1 cup"],
-    ["Coconut milk, canned",   197,   2.0,   6.0,  21.3,  226, "1 cup"],
-    ["Coconut milk, beverage",    22,   0.2,   3.4,   0.9,  240, "1 cup"],
-    ["Lactose-free milk, whole",    61,   3.2,   4.9,   3.3,  244, "1 cup"],
-    ["Ice cream, chocolate",   216,   3.8,  26.0,  11.0,   66, "½ cup"],
-    ["Ice cream, strawberry",   192,   3.2,  24.5,   9.4,   66, "½ cup"],
-    ["Ice cream, cookies and cream",   253,   4.0,  29.5,  13.5,   66, "½ cup"],
-    ["Gelato, vanilla",   190,   4.3,  23.0,   8.8,   87, "½ cup"],
-    ["Frozen yogurt, vanilla",   127,   3.6,  22.3,   2.9,   72, "½ cup"],
-    ["Sherbet, orange",   144,   1.1,  32.0,   1.9,   96, "½ cup"],
-    ["Sorbet, fruit",   121,   0.4,  31.2,   0.1,  100, "½ cup"],
-    ["Pudding, chocolate, prepared",    99,   2.7,  15.6,   3.2,  140, "½ cup"],
-    ["Pudding, vanilla, prepared",    98,   2.7,  15.5,   3.1,  140, "½ cup"],
-    ["Custard, prepared",   122,   4.5,  14.6,   5.4,  100, "½ cup"],
-    ["Panna cotta",   201,   3.5,  17.0,  13.5,  100, "100g"],
-    ["Basmati rice, cooked",   130,   2.7,  28.2,   0.3,  186, "1 cup"],
-    ["Wild rice, cooked",   101,   4.0,  21.3,   0.3,  164, "1 cup"],
-    ["Arborio rice, cooked",   130,   2.4,  28.4,   0.3,  186, "1 cup"],
-    ["Black rice, cooked",   160,   4.0,  32.0,   1.5,  186, "1 cup"],
-    ["Red rice, cooked",   110,   2.5,  23.0,   1.0,  186, "1 cup"],
-    ["Sticky rice, cooked",   130,   2.4,  28.6,   0.2,  174, "1 cup"],
-    ["Fried rice, with egg",   163,   4.3,  23.0,   6.2,  250, "1 cup"],
-    ["Rice pilaf, cooked",   150,   3.0,  24.0,   4.5,  100, "100g"],
-    ["Risotto, prepared",   153,   4.6,  20.0,   5.7,  100, "100g"],
-    ["Paella, prepared",   196,  10.8,  22.0,   7.0,  100, "100g"],
-    ["Buckwheat, cooked",    92,   3.4,  19.9,   0.6,  168, "1 cup"],
-    ["Bulgur, cooked",    83,   3.1,  18.6,   0.2,  182, "1 cup"],
-    ["Millet, cooked",   119,   3.5,  23.7,   1.0,  174, "1 cup"],
-    ["Sorghum, cooked",   329,  10.6,  72.1,   3.5,  100, "100g"],
-    ["Amaranth, cooked",   102,   3.8,  18.7,   1.6,  100, "100g"],
-    ["Barley, cooked",   123,   2.3,  28.2,   0.4,  157, "1 cup"],
-    ["Farro, cooked",   150,   5.0,  30.0,   1.0,  200, "1 cup"],
-    ["Spelt, cooked",   127,   5.5,  26.0,   0.9,  100, "100g"],
-    ["Teff, cooked",   101,   3.9,  20.0,   0.7,  100, "100g"],
-    ["Rye, cooked",   129,   4.6,  28.4,   0.7,  100, "100g"],
-    ["Kamut, cooked",   147,   6.6,  28.9,   0.9,  100, "100g"],
-    ["Polenta, cooked",    70,   1.5,  15.6,   0.3,  240, "1 cup"],
-    ["Corn grits, cooked",    71,   1.6,  15.6,   0.4,  242, "1 cup"],
-    ["Cream of wheat, cooked",    65,   1.9,  13.8,   0.2,  251, "1 cup"],
-    ["Semolina, cooked",    60,   2.1,  12.1,   0.3,  100, "100g"],
-    ["Bran flakes cereal",   303,  10.7,  73.0,   1.5,   30, "¾ cup"],
-    ["Corn flakes cereal",   357,   7.5,  84.1,   0.4,   28, "1 cup"],
-    ["Frosted flakes cereal",   379,   3.9,  89.6,   0.5,   41, "¾ cup"],
-    ["Cheerios cereal",   375,  13.1,  71.9,   6.7,   28, "1 cup"],
-    ["Honey Nut Cheerios",   383,   9.5,  83.3,   3.3,   28, "¾ cup"],
-    ["Special K cereal",   379,  24.5,  72.7,   1.6,   31, "1 cup"],
-    ["Raisin Bran cereal",   298,   9.3,  74.3,   1.9,   59, "1 cup"],
-    ["Muesli",   349,   9.6,  65.5,   6.0,   85, "½ cup"],
-    ["Granola, low fat",   388,  10.9,  74.7,   5.9,   58, "½ cup"],
-    ["Oat bran, cooked",    40,   3.2,   7.0,   0.9,  219, "1 cup"],
-    ["Wheat bran",   216,  15.6,  64.5,   4.3,   30, "¼ cup"],
-    ["Wheat germ",   382,  26.6,  51.8,   9.7,   28, "¼ cup"],
-    ["Corn bran",   224,   6.0,  83.9,   1.3,  100, "100g"],
-    ["Rye bread",   259,   8.5,  48.3,   3.3,   32, "1 slice"],
-    ["Pumpernickel bread",   250,   8.6,  48.0,   2.9,   26, "1 slice"],
-    ["Multigrain bread",   265,  11.0,  45.9,   4.2,   28, "1 slice"],
-    ["Oat bread",   262,  10.2,  47.8,   3.7,  100, "100g"],
-    ["Italian bread",   271,   9.1,  50.4,   3.5,   30, "1 slice"],
-    ["French bread / baguette",   274,   9.0,  54.3,   2.4,   50, "1 medium slice"],
-    ["Brioche",   381,  10.0,  43.8,  18.0,  100, "100g"],
-    ["Focaccia",   281,   7.8,  43.2,   8.9,  100, "100g"],
-    ["Naan bread",   317,   9.4,  56.5,   5.3,   90, "1 naan"],
-    ["Pita bread, white",   275,   9.1,  55.7,   1.2,   60, "1 pita"],
-    ["Pita bread, whole wheat",   265,  10.0,  52.9,   1.6,   60, "1 pita"],
-    ["Flatbread",   286,   9.0,  54.0,   4.1,  100, "100g"],
-    ["Challah bread",   306,  10.0,  50.8,   7.5,  100, "100g"],
-    ["Ciabatta",   272,   9.5,  53.6,   1.5,  100, "100g"],
-    ["Croissant, plain",   406,   8.2,  45.8,  21.0,   57, "1 croissant"],
-    ["Croissant, butter",   406,   8.2,  45.8,  21.0,   57, "1 croissant"],
-    ["Danish pastry",   374,   5.9,  46.8,  18.9,  100, "100g"],
-    ["Doughnut, glazed",   452,   5.4,  51.4,  25.0,   45, "1 doughnut"],
-    ["Doughnut, cake",   417,   5.1,  51.1,  22.2,   47, "1 doughnut"],
-    ["Muffin, blueberry",   377,   5.6,  57.0,  14.8,  130, "1 muffin"],
-    ["Muffin, bran",   298,   6.4,  53.8,   7.2,  113, "1 muffin"],
-    ["Muffin, corn",   369,   6.0,  56.4,  13.1,  113, "1 muffin"],
-    ["Muffin, chocolate chip",   443,   6.0,  61.2,  19.4,  130, "1 muffin"],
-    ["Biscuit, plain",   362,   7.0,  44.6,  17.5,   60, "1 biscuit"],
-    ["Biscuit, buttermilk",   335,   7.1,  43.3,  14.9,   60, "1 biscuit"],
-    ["Scone, plain",   380,   7.2,  54.3,  15.1,  100, "100g"],
-    ["Waffle, plain",   291,   8.3,  37.5,  12.0,   75, "1 waffle"],
-    ["Pancake, plain",   227,   6.4,  35.8,   6.3,   77, "1 medium pancake"],
-    ["French toast",   229,   9.0,  26.0,  10.0,   65, "1 slice"],
-    ["Crêpe, plain",   173,   5.3,  24.9,   5.9,  100, "100g"],
-    ["Corn muffin",   370,   6.0,  57.0,  12.6,  100, "100g"],
-    ["Bread roll, white",   285,   9.0,  55.0,   3.2,   28, "1 roll"],
-    ["Bread roll, whole wheat",   274,  11.0,  50.0,   4.0,  100, "100g"],
-    ["Hot dog bun",   279,   9.0,  50.2,   4.6,   43, "1 bun"],
-    ["Hamburger bun",   279,   9.0,  50.2,   4.6,   43, "1 bun"],
-    ["Puff pastry, baked",   558,   7.4,  44.6,  39.7,  100, "100g"],
-    ["Phyllo / filo dough",   288,   8.0,  58.0,   2.5,  100, "100g"],
-    ["Breadcrumbs, dry",   395,  13.5,  73.2,   5.3,   30, "¼ cup"],
-    ["Matzo",   395,  11.3,  82.3,   1.3,  100, "100g"],
-    ["Crispbread, rye",   338,  10.8,  70.6,   1.1,  100, "100g"],
-    ["Graham crackers",   429,   6.0,  74.0,  10.6,   28, "2 sheets"],
-    ["Saltine crackers",   428,  10.0,  71.4,  10.0,   15, "5 crackers"],
-    ["Animal crackers",   447,   7.8,  74.1,  13.5,   30, "16 crackers"],
-    ["Oreo cookies",   480,   5.0,  71.0,  20.0,   34, "3 cookies"],
-    ["Chocolate chip cookies",   502,   5.6,  62.2,  26.3,   30, "2 cookies"],
-    ["Ginger snap cookies",   429,   5.3,  79.4,   9.4,   28, "4 cookies"],
-    ["Oatmeal raisin cookies",   480,   6.5,  67.0,  21.0,   30, "2 cookies"],
-    ["Sugar cookies",   487,   5.3,  64.6,  23.2,   30, "1 cookie"],
-    ["Shortbread cookies",   524,   6.2,  63.5,  27.0,   28, "2 cookies"],
-    ["Peanut butter cookies",   514,  11.9,  58.3,  27.6,   30, "2 cookies"],
-    ["Brownies",   406,   5.0,  65.5,  16.5,   56, "1 brownie"],
-    ["Blondies",   462,   5.6,  59.7,  23.0,  100, "100g"],
-    ["Rice Krispy treats",   414,   4.3,  82.0,   7.7,  100, "100g"],
-    ["Spaghetti, cooked",   158,   5.8,  30.9,   0.9,  140, "1 cup"],
-    ["Fettuccine, cooked",   158,   5.8,  30.9,   0.9,  140, "1 cup"],
-    ["Penne, cooked",   158,   5.8,  30.9,   0.9,  140, "1 cup"],
-    ["Rigatoni, cooked",   160,   5.8,  31.3,   0.9,  140, "1 cup"],
-    ["Lasagna noodles, cooked",   155,   5.7,  30.9,   0.7,  100, "100g"],
-    ["Linguine, cooked",   158,   5.8,  30.9,   0.9,  100, "100g"],
-    ["Angel hair pasta, cooked",   158,   5.8,  30.9,   0.9,  100, "100g"],
-    ["Rotini, cooked",   159,   5.8,  31.2,   0.9,  140, "1 cup"],
-    ["Orzo, cooked",   158,   5.8,  30.9,   0.9,  100, "100g"],
-    ["Gnocchi, cooked",   159,   4.5,  32.0,   1.0,  100, "100g"],
-    ["Ravioli, cheese, cooked",   197,   9.0,  26.4,   6.2,  100, "100g"],
-    ["Tortellini, cheese, cooked",   225,  10.0,  30.6,   7.0,  100, "100g"],
-    ["Egg noodles, cooked",   138,   4.5,  25.2,   2.2,  160, "1 cup"],
-    ["Udon noodles, cooked",   135,   2.7,  28.0,   0.6,  200, "1 cup"],
-    ["Soba noodles, cooked",   103,   5.1,  21.4,   0.1,  100, "100g"],
-    ["Ramen noodles, cooked",   138,   5.0,  25.7,   2.3,  100, "100g"],
-    ["Rice noodles, cooked",   108,   0.9,  25.2,   0.2,  176, "1 cup"],
-    ["Glass noodles, cooked",    81,   0.1,  19.7,   0.1,  100, "100g"],
-    ["Lo mein, prepared",   136,   5.8,  18.0,   4.3,  100, "100g"],
-    ["Pad Thai, prepared",   183,   8.2,  24.0,   6.5,  100, "100g"],
-    ["Macaroni, cooked",   158,   5.8,  30.9,   0.9,  140, "1 cup"],
-    ["Mac and cheese, prepared",   189,   6.5,  22.4,   8.1,  100, "100g"],
-    ["Spaghetti Bolognese, prepared",   150,   9.0,  14.0,   6.0,  100, "100g"],
-    ["Pasta with marinara, prepared",   136,   4.5,  22.0,   3.5,  100, "100g"],
-    ["Pasta with pesto, prepared",   222,   6.5,  21.0,  12.5,  100, "100g"],
-    ["Lasagna, prepared",   166,   9.8,  15.3,   6.9,  100, "100g"],
-    ["Pasta carbonara, prepared",   251,  10.6,  21.6,  13.5,  100, "100g"],
-    ["Pizza, margherita",   242,  10.4,  30.7,   8.7,  100, "100g"],
-    ["Pizza, Hawaiian",   275,  12.5,  33.4,  10.2,  100, "100g"],
-    ["Pizza, meat lovers",   325,  14.5,  30.2,  16.1,  100, "100g"],
-    ["Pizza, veggie",   250,  10.7,  33.1,   8.3,  100, "100g"],
-    ["Pizza, white / bianca",   268,  10.1,  30.0,  11.9,  100, "100g"],
-    ["Pizza, thin crust, cheese",   251,  11.8,  27.8,  10.0,  100, "100g"],
-    ["Pizza, thick crust, cheese",   278,  11.7,  38.0,   8.5,  100, "100g"],
-    ["Pizza, stuffed crust",   297,  13.0,  33.5,  12.5,  100, "100g"],
-    ["Calzone, cheese",   229,  10.0,  27.3,   8.8,  100, "100g"],
-    ["Stromboli, prepared",   286,  14.0,  26.0,  13.0,  100, "100g"],
-    ["Sandwich, turkey club",   241,  15.5,  21.6,  10.0,  100, "100g"],
-    ["Sandwich, BLT",   308,  12.5,  26.3,  17.0,  100, "100g"],
-    ["Sandwich, ham and cheese",   253,  14.8,  23.6,  10.2,  100, "100g"],
-    ["Sandwich, grilled cheese",   338,  13.5,  26.5,  20.5,  100, "100g"],
-    ["Sandwich, tuna salad",   257,  15.3,  21.9,  11.4,  100, "100g"],
-    ["Sandwich, egg salad",   255,  11.5,  23.9,  12.4,  100, "100g"],
-    ["Sandwich, PB&J",   343,  12.5,  43.6,  15.0,  100, "100g"],
-    ["Sandwich, Reuben",   320,  16.0,  25.0,  16.5,  100, "100g"],
-    ["Sandwich, veggie",   213,   8.6,  29.3,   8.3,  100, "100g"],
-    ["Wrap, chicken Caesar",   207,  12.5,  21.1,   8.0,  100, "100g"],
-    ["Wrap, burrito, bean cheese",   219,   9.0,  30.0,   7.0,  100, "100g"],
-    ["Wrap, turkey",   196,  12.4,  22.0,   6.4,  100, "100g"],
-    ["Subway, 6\" turkey breast",   131,  10.3,  18.5,   2.0,  100, "100g"],
-    ["Panini, mozzarella tomato",   252,  12.0,  26.0,  10.5,  100, "100g"],
-    ["Gyro, lamb",   265,  14.0,  22.0,  13.0,  100, "100g"],
-    ["Shawarma, chicken",   194,  16.0,  14.5,   7.5,  100, "100g"],
-    ["Falafel",   333,  13.3,  31.8,  17.7,  100, "100g"],
-    ["Hot dog, with bun",   269,  10.3,  23.5,  14.6,  100, "1 hot dog"],
-    ["Corn dog",   261,   9.5,  24.1,  14.2,  100, "100g"],
-    ["Slider, beef mini burger",   254,  12.0,  23.0,  12.0,  100, "100g"],
-    ["Tomato soup, canned, prepared",    50,   1.2,  11.0,   0.8,  100, "100g"],
-    ["Chicken noodle soup, prepared",    33,   2.3,   4.0,   0.9,  100, "100g"],
-    ["Minestrone soup, canned",    44,   2.3,   6.8,   0.9,  100, "100g"],
-    ["Lentil soup, canned",    71,   4.1,   9.5,   1.9,  100, "100g"],
-    ["Split pea soup, canned",   100,   4.1,  16.5,   2.3,  100, "100g"],
-    ["Clam chowder, New England",    76,   2.8,   8.9,   3.2,  100, "100g"],
-    ["French onion soup, prepared",    50,   2.8,   6.5,   1.0,  100, "100g"],
-    ["Beef barley soup, canned",    51,   3.5,   7.2,   1.0,  100, "100g"],
-    ["Black bean soup, canned",    80,   4.7,  13.0,   1.3,  100, "100g"],
-    ["Gazpacho",    28,   1.0,   4.3,   0.9,  100, "100g"],
-    ["Miso soup, prepared",    19,   1.5,   2.2,   0.5,  100, "100g"],
-    ["Pho, beef, prepared",   104,   8.5,  13.0,   2.0,  100, "100g"],
-    ["Ramen, prepared",   152,   8.0,  18.5,   5.0,  100, "100g"],
-    ["Tom yum soup, prepared",    37,   2.5,   4.0,   1.0,  100, "100g"],
-    ["Chili con carne, prepared",   137,   7.5,  11.2,   6.5,  100, "100g"],
-    ["Chili, vegetarian, canned",    89,   4.7,  14.0,   1.5,  100, "100g"],
-    ["Beef chili, canned",   105,   6.9,  12.0,   3.3,  100, "100g"],
-    ["Pozole, prepared",    80,   7.0,  10.0,   1.5,  100, "100g"],
-    ["Bisque, lobster",    93,   4.5,   7.0,   5.5,  100, "100g"],
-    ["Beef stew, prepared",    82,   6.2,   7.0,   3.1,  100, "100g"],
-    ["Chicken tortilla soup",    66,   5.0,   7.0,   2.0,  100, "100g"],
-    ["Garden salad, no dressing",    17,   1.1,   3.4,   0.2,  100, "100g"],
-    ["Greek salad",   107,   3.4,   6.1,   8.3,  100, "100g"],
-    ["Cobb salad, no dressing",   184,  15.0,   5.5,  11.5,  100, "100g"],
-    ["Nicoise salad, no dressing",   151,  12.0,   9.5,   6.5,  100, "100g"],
-    ["Waldorf salad",   134,   1.5,  12.0,  10.0,  100, "100g"],
-    ["Coleslaw, creamy",   151,   1.3,  14.0,  10.5,  100, "100g"],
-    ["Coleslaw, vinegar",    87,   0.8,  12.0,   4.2,  100, "100g"],
-    ["Pasta salad, prepared",   200,   5.0,  23.0,   9.5,  100, "100g"],
-    ["Potato salad, prepared",   179,   2.5,  19.5,   9.7,  100, "100g"],
-    ["Tabbouleh",   143,   3.3,  16.4,   8.0,  100, "100g"],
-    ["Caprese salad",   162,   9.0,   4.0,  12.5,  100, "100g"],
-    ["Quinoa bowl, prepared",   176,   7.0,  23.5,   6.0,  100, "100g"],
-    ["Buddha bowl, prepared",   187,   8.0,  24.0,   7.0,  100, "100g"],
-    ["Grain bowl, prepared",   210,   8.5,  28.0,   7.5,  100, "100g"],
-    ["Poke bowl, prepared",   193,  14.0,  22.0,   5.5,  100, "100g"],
-    ["Acai bowl, prepared",   162,   3.1,  32.5,   4.3,  100, "100g"],
-    ["Smoothie bowl, mixed fruit",   108,   2.5,  22.0,   2.0,  100, "100g"],
-    ["Taco, beef, hard shell",   220,  11.5,  15.0,  12.5,  100, "100g"],
-    ["Taco, chicken, soft",   208,  13.5,  17.0,   8.5,  100, "100g"],
-    ["Taco, fish, prepared",   204,   9.0,  21.0,   8.8,  100, "100g"],
-    ["Enchilada, chicken",   168,   9.5,  17.5,   6.2,  100, "100g"],
-    ["Enchilada, beef",   193,  11.0,  16.5,   8.7,  100, "100g"],
-    ["Quesadilla, cheese",   340,  14.5,  27.5,  19.0,  100, "100g"],
-    ["Quesadilla, chicken",   283,  17.0,  23.0,  13.0,  100, "100g"],
-    ["Nachos, with cheese",   346,  12.5,  37.5,  17.0,  100, "100g"],
-    ["Tamale, prepared",   195,   5.8,  18.9,   9.7,  100, "100g"],
-    ["Chile relleno",   186,  10.0,  12.0,  11.0,  100, "100g"],
-    ["Refried beans, canned",   105,   6.0,  16.0,   1.6,  125, "½ cup"],
-    ["Mexican rice, prepared",   163,   3.2,  28.0,   4.3,  100, "100g"],
-    ["Salsa verde",    34,   1.0,   6.9,   0.9,   32, "2 tbsp"],
-    ["Pico de gallo",    25,   1.1,   4.6,   0.5,   30, "2 tbsp"],
-    ["Corn on the cob, cooked",    99,   3.3,  22.1,   1.5,  100, "100g"],
-    ["Fried rice, shrimp",   183,   7.5,  26.0,   5.5,  250, "1 cup"],
-    ["Fried rice, vegetable",   164,   3.9,  26.0,   5.3,  250, "1 cup"],
-    ["Chow mein, chicken",   133,   8.5,  14.5,   4.8,  100, "100g"],
-    ["Spring roll, fried",   201,   5.0,  22.0,  10.0,  100, "100g"],
-    ["Egg roll, fried",   207,   5.3,  24.0,  10.0,  100, "100g"],
-    ["Dumplings, pork steamed",   177,   9.0,  20.0,   6.0,  100, "100g"],
-    ["Dumplings, pan-fried",   193,  10.0,  20.0,   7.5,  100, "100g"],
-    ["Wonton soup",    48,   3.1,   6.7,   1.0,  100, "100g"],
-    ["Miso ramen, prepared",   144,   7.5,  18.5,   4.5,  100, "100g"],
-    ["Tonkotsu ramen, prepared",   172,   8.5,  18.5,   7.0,  100, "100g"],
-    ["Sushi, California roll",   186,   7.8,  29.8,   4.2,  100, "100g"],
-    ["Sushi, tuna roll",   184,   9.0,  30.0,   2.0,  100, "100g"],
-    ["Sushi, cucumber roll",   133,   3.5,  29.0,   0.3,  100, "100g"],
-    ["Sashimi, salmon, 3 pc",   104,  13.0,   0.0,   5.5,  100, "100g"],
-    ["Sashimi, tuna, 3 pc",   104,  17.0,   0.0,   3.5,  100, "100g"],
-    ["Nigiri, salmon",   180,   8.5,  25.0,   4.5,  100, "100g"],
-    ["Tempura, shrimp",   257,   8.7,  28.9,  12.5,  100, "100g"],
-    ["Teriyaki chicken, prepared",   155,  17.0,   8.5,   5.5,  100, "100g"],
-    ["Beef bulgogi, prepared",   176,  17.0,   8.0,   8.0,  100, "100g"],
-    ["Bibimbap, prepared",   181,  10.5,  23.0,   5.5,  100, "100g"],
-    ["Korean fried chicken",   318,  21.0,  15.0,  20.0,  100, "100g"],
-    ["Pad Thai, shrimp",   196,  10.0,  25.5,   5.5,  100, "100g"],
-    ["Green curry, chicken",   165,  12.0,   6.0,  10.5,  100, "100g"],
-    ["Red curry, beef",   155,  11.0,   5.5,  10.0,  100, "100g"],
-    ["Massaman curry",   179,  11.0,   8.0,  11.0,  100, "100g"],
-    ["Tom kha gai",    97,   6.0,   5.0,   6.5,  100, "100g"],
-    ["Satay, chicken with peanut sauce",   210,  17.0,   5.0,  13.5,  100, "100g"],
-    ["Nasi goreng",   184,   7.0,  24.5,   6.5,  100, "100g"],
-    ["Mie goreng",   231,   9.0,  33.5,   6.5,  100, "100g"],
-    ["Banh mi, chicken",   224,  14.5,  27.5,   6.5,  100, "100g"],
-    ["Vietnamese pho, chicken",    89,   8.5,  11.0,   1.0,  100, "100g"],
-    ["Congee / rice porridge",    72,   2.5,  15.5,   0.5,  100, "100g"],
-    ["Dim sum, har gow",    74,   5.5,   8.0,   2.0,  100, "100g"],
-    ["Dim sum, siu mai",   106,   7.0,  10.0,   4.0,  100, "100g"],
-    ["Mapo tofu, prepared",   136,   9.0,   7.0,   8.5,  100, "100g"],
-    ["Kung pao chicken",   173,  13.5,   7.5,   9.5,  100, "100g"],
-    ["Beef and broccoli",   107,   9.0,   5.5,   5.5,  100, "100g"],
-    ["Dal / lentil soup",   124,   8.0,  17.5,   2.5,  100, "100g"],
-    ["Saag paneer",   176,   8.5,   7.5,  12.5,  100, "100g"],
-    ["Butter chicken / murgh makhani",   147,  11.5,   6.5,   8.0,  100, "100g"],
-    ["Chicken biryani",   152,   9.0,  19.0,   4.5,  100, "100g"],
-    ["Lamb biryani",   161,   9.5,  18.5,   5.5,  100, "100g"],
-    ["Palak paneer",   165,   7.5,   8.5,  11.0,  100, "100g"],
-    ["Chana masala",   127,   5.5,  15.0,   5.5,  100, "100g"],
-    ["Aloo gobi, prepared",    77,   2.5,  11.0,   3.0,  100, "100g"],
-    ["Samosa, fried",   275,   5.5,  32.5,  13.5,  100, "100g"],
-    ["Naan bread, garlic",   334,   9.6,  57.5,   6.5,  100, "100g"],
-    ["Raita",    46,   2.5,   5.0,   1.5,  100, "100g"],
-    ["Mango lassi",    81,   2.8,  15.0,   1.3,  100, "100g"],
-    ["Tandoori chicken",   170,  25.0,   3.5,   6.0,  100, "100g"],
-    ["Paneer, fresh",   265,  18.3,   3.4,  20.0,  100, "100g"],
-    ["Chapati / roti",   297,   9.5,  55.3,   3.9,  100, "100g"],
-    ["Paratha, plain",   327,   8.5,  49.8,  11.3,  100, "100g"],
-    ["Khichdi",   155,   5.5,  27.0,   3.0,  100, "100g"],
-    ["Moussaka, prepared",   140,   8.5,   8.0,   8.5,  100, "100g"],
-    ["Spanakopita",   250,   8.0,  22.0,  14.5,  100, "100g"],
-    ["Dolmades / stuffed grape leaves",   114,   3.5,  14.5,   5.0,  100, "100g"],
-    ["Shawarma, beef",   207,  16.0,  14.5,   8.5,  100, "100g"],
-    ["Kebab, lamb",   227,  20.0,   3.5,  15.0,  100, "100g"],
-    ["Kebab, chicken",   189,  22.0,   4.0,   9.0,  100, "100g"],
-    ["Baba ganoush",    91,   2.3,   8.7,   5.8,  100, "100g"],
-    ["Tzatziki",    67,   4.0,   3.5,   4.3,  100, "100g"],
-    ["Pita chips",   407,  11.0,  58.0,  14.0,  100, "100g"],
-    ["Tapenade, olive",   302,   2.5,   4.5,  31.5,  100, "100g"],
-    ["Fattoush salad",    91,   2.0,  10.0,   4.5,  100, "100g"],
-    ["Tiramisu",   285,   5.0,  25.5,  17.8,  100, "1 serving"],
-    ["Cannoli, filled",   346,   6.5,  35.0,  20.5,  100, "100g"],
-    ["Bruschetta, prepared",   159,   4.5,  22.5,   5.5,  100, "100g"],
-    ["Risotto, mushroom",   169,   4.6,  24.0,   6.0,  100, "100g"],
-    ["Osso buco",   223,  21.0,   5.0,  12.5,  100, "100g"],
-    ["Carbonara sauce",   347,  13.5,   4.0,  30.5,  100, "100g"],
-    ["Arrabiata sauce",    50,   1.5,   7.5,   1.8,  100, "100g"],
-    ["Puttanesca sauce",    52,   1.5,   6.5,   2.5,  100, "100g"],
-    ["Polpette / Italian meatballs",   237,  19.6,   5.5,  14.8,  100, "100g"],
-    ["Gnocchi, potato, cooked",   159,   4.5,  32.0,   1.0,  100, "100g"],
-    ["Mac and cheese, homemade",   238,   9.5,  22.5,  12.0,  100, "100g"],
-    ["Mac and cheese, boxed, prepared",   169,   5.5,  23.5,   6.5,  100, "100g"],
-    ["Baked beans, canned",   155,   7.0,  27.0,   1.7,  127, "½ cup"],
-    ["Collard greens, cooked",    39,   3.0,   7.3,   0.6,  190, "1 cup"],
-    ["Grits, cooked",    70,   1.5,  15.2,   0.5,  100, "100g"],
-    ["Hush puppies, fried",   329,   6.5,  41.0,  16.0,  100, "100g"],
-    ["Chicken fried steak",   312,  17.0,  21.0,  18.0,  100, "100g"],
-    ["Chicken and waffles",   312,  17.0,  28.0,  14.0,  100, "100g"],
-    ["Pulled pork sandwich",   220,  15.0,  22.0,   7.5,  100, "100g"],
-    ["BBQ brisket",   273,  25.0,   8.5,  15.0,  100, "100g"],
-    ["Ribs, BBQ, pork",   336,  19.7,   6.5,  25.5,  100, "100g"],
-    ["Coleslaw, BBQ style",   152,   1.3,  14.0,  10.5,  100, "100g"],
-    ["Cornbread",   332,   6.6,  46.3,  14.1,  100, "100g"],
-    ["Biscuits and gravy",   231,   6.5,  21.5,  13.5,  100, "100g"],
-    ["Country-fried chicken",   280,  22.0,  12.5,  15.5,  100, "100g"],
-    ["Green bean casserole",   126,   2.7,  10.5,   8.4,  100, "100g"],
-    ["Sweet potato casserole",   183,   2.5,  32.5,   5.8,  100, "100g"],
-    ["Shepherd's pie",   113,   7.5,   9.5,   4.5,  100, "100g"],
-    ["Pot roast, prepared",   196,  22.0,   5.5,   9.5,  100, "100g"],
-    ["Beef stroganoff",   164,  11.5,   9.5,   8.5,  100, "100g"],
-    ["Stuffed peppers, beef rice",   151,  10.0,  14.5,   5.5,  100, "100g"],
-    ["Sloppy joe, prepared",   153,   9.0,  16.0,   5.5,  100, "100g"],
-    ["Breakfast burrito, egg cheese",   215,  10.5,  21.5,   9.0,  100, "100g"],
-    ["Breakfast sandwich, McMuffin-style",   263,  14.0,  22.0,  12.5,  100, "100g"],
-    ["Bacon, egg, and cheese bagel",   362,  19.5,  34.0,  15.0,  100, "100g"],
-    ["Denver omelet",   193,  14.0,   3.5,  13.5,  100, "100g"],
-    ["Eggs Benedict",   263,  12.5,  12.5,  18.0,  100, "100g"],
-    ["Quiche, Lorraine",   279,  10.0,  16.0,  19.5,  100, "100g"],
-    ["Belgian waffle, plain",   360,   9.6,  50.0,  13.0,  100, "100g"],
-    ["French toast, with syrup",   273,   8.5,  38.0,   8.5,  100, "100g"],
-    ["Acai berry, frozen puree",    60,   1.5,   6.0,   3.5,  100, "100g"],
-    ["Granola with milk",   184,   5.5,  29.0,   5.0,  100, "100g"],
-    ["Overnight oats, plain",    96,   3.8,  15.5,   2.5,  100, "100g"],
-    ["Chia pudding",   155,   5.0,  14.0,   8.5,  100, "100g"],
-    ["Avocado toast, plain",   190,   4.5,  20.5,   9.5,  100, "100g"],
-    ["Smoked salmon on bagel",   260,  14.5,  28.5,   9.5,  100, "100g"],
-    ["Hash browns, fried",   265,   2.5,  31.5,  14.5,  100, "100g"],
-    ["Breakfast sausage link, pork",   250,  14.0,   1.5,  21.0,  100, "100g"],
-    ["Turkey sausage link",   155,  15.0,   2.5,   9.5,  100, "100g"],
-    ["Big Mac, McDonald's",   257,  12.5,  22.5,  12.5,  100, "100g"],
-    ["Whopper, Burger King",   272,  13.5,  22.0,  14.0,  100, "100g"],
-    ["Quarter Pounder w/ Cheese",   296,  18.0,  21.5,  15.0,  100, "100g"],
-    ["Double Cheeseburger",   344,  21.0,  22.5,  18.5,  100, "100g"],
-    ["Veggie burger, cooked",   176,  16.0,  17.0,   4.5,  100, "100g"],
-    ["Salmon burger, cooked",   195,  20.0,   7.0,   8.5,  100, "100g"],
-    ["Portobello mushroom burger",   128,   4.5,  11.5,   7.0,  100, "100g"],
-    ["McFlurry, Oreo",   195,   4.5,  31.5,   6.5,  100, "100g"],
-    ["McDonald's fries, medium",   293,   3.5,  38.5,  14.0,  100, "100g"],
-    ["Onion rings, fast food",   316,   4.5,  38.0,  16.5,  100, "1 serving"],
-    ["Tater tots",   197,   2.5,  25.0,   9.5,   85, "9 pieces"],
-    ["Mozzarella sticks, fried",   340,  17.0,  26.5,  18.5,  100, "100g"],
-    ["Jalapeño poppers, fried",   309,  10.0,  26.0,  19.5,  100, "100g"],
-    ["Loaded potato skins",   295,   9.5,  23.0,  18.0,  100, "100g"],
-    ["Tomato sauce, marinara",    81,   2.0,  11.7,   3.1,  125, "½ cup"],
-    ["Tomato sauce, canned",    32,   1.3,   6.6,   0.2,  125, "½ cup"],
-    ["Pasta sauce, store-bought",    76,   1.5,   9.5,   3.5,  100, "100g"],
-    ["Alfredo sauce",   235,   4.5,   3.5,  23.0,   60, "¼ cup"],
-    ["Pesto, basil",   449,   9.0,   7.5,  43.5,   21, "1 tbsp"],
-    ["Béarnaise sauce",   268,   2.0,   1.0,  28.5,  100, "100g"],
-    ["Hollandaise sauce",   302,   3.5,   1.5,  31.5,  100, "100g"],
-    ["Worcestershire sauce",    78,   1.0,  19.0,   0.1,   17, "1 tbsp"],
-    ["Hot sauce, Tabasco",    12,   0.5,   1.4,   0.5,    5, "1 tsp"],
-    ["Sriracha",   101,   2.0,  20.0,   2.3,    9, "1 tsp"],
-    ["Hoisin sauce",   220,   4.0,  42.0,   4.0,   16, "1 tbsp"],
-    ["Oyster sauce",   117,   2.5,  24.5,   0.5,   16, "1 tbsp"],
-    ["Fish sauce",    35,   5.1,   3.6,   0.0,   18, "1 tbsp"],
-    ["Teriyaki sauce",   105,   2.0,  21.0,   1.5,   18, "1 tbsp"],
-    ["Sweet and sour sauce",   118,   0.5,  29.0,   0.2,  100, "100g"],
-    ["Duck sauce",   240,   0.5,  60.0,   0.0,  100, "100g"],
-    ["Plum sauce",   247,   0.5,  61.5,   0.5,  100, "100g"],
-    ["Tahini",   595,  17.0,  21.2,  53.8,   15, "1 tbsp"],
-    ["Miso paste",   199,  11.7,  26.5,   6.0,   17, "1 tbsp"],
-    ["Gochujang",   145,   4.0,  31.0,   1.5,   30, "2 tbsp"],
-    ["Curry paste, red",   215,   6.0,  22.5,  11.5,  100, "100g"],
-    ["Curry paste, green",   220,   6.5,  21.5,  12.0,  100, "100g"],
-    ["Chimichurri",   311,   1.5,   5.5,  32.0,  100, "100g"],
-    ["Harissa paste",   173,   3.5,  11.5,  12.5,  100, "100g"],
-    ["Remoulade sauce",   394,   1.5,   5.0,  40.5,  100, "100g"],
-    ["Thousand island dressing",   410,   1.5,  15.0,  39.0,   30, "2 tbsp"],
-    ["Blue cheese dressing",   483,   4.5,   5.0,  50.0,   30, "2 tbsp"],
-    ["Italian dressing",   225,   0.5,   5.5,  23.0,   30, "2 tbsp"],
-    ["French dressing",   293,   0.5,  16.0,  26.0,   30, "2 tbsp"],
-    ["Caesar dressing",   422,   2.5,   4.0,  44.0,   30, "2 tbsp"],
-    ["Honey mustard dressing",   256,   0.5,  29.5,  15.5,   30, "2 tbsp"],
-    ["Sesame ginger dressing",   218,   1.5,  18.5,  15.0,  100, "100g"],
-    ["Avocado dressing",   178,   1.5,   5.5,  17.0,  100, "100g"],
-    ["Balsamic vinaigrette",   238,   0.5,   9.0,  22.0,   15, "1 tbsp"],
-    ["Apple cider vinegar",    22,   0.0,   0.9,   0.0,  100, "100g"],
-    ["Balsamic vinegar",    88,   0.5,  17.0,   0.0,  100, "100g"],
-    ["Sriracha mayo",   381,   2.0,   4.5,  39.5,  100, "100g"],
-    ["Artichoke, cooked",    53,   3.5,  11.9,   0.2,  120, "1 medium"],
-    ["Artichoke hearts, canned",    35,   2.5,   7.0,   0.2,  100, "100g"],
-    ["Arugula, raw",    25,   2.6,   3.7,   0.7,  100, "100g"],
-    ["Bamboo shoots, cooked",    18,   2.0,   2.5,   0.2,  100, "100g"],
-    ["Beet, cooked",    44,   1.7,  10.0,   0.2,   85, "½ cup sliced"],
-    ["Beet, raw",    43,   1.6,   9.6,   0.2,  100, "100g"],
-    ["Bok choy, cooked",    16,   2.0,   2.3,   0.2,  170, "1 cup"],
-    ["Brussels sprouts, cooked",    36,   3.0,   6.8,   0.5,   78, "½ cup"],
-    ["Cabbage, green, raw",    25,   1.3,   5.8,   0.1,   70, "1 cup shredded"],
-    ["Cabbage, red, raw",    31,   1.4,   7.4,   0.2,   70, "1 cup shredded"],
-    ["Cabbage, cooked",    23,   1.1,   5.0,   0.1,  100, "100g"],
-    ["Collard greens, raw",    32,   3.0,   5.7,   0.6,  100, "100g"],
-    ["Eggplant, cooked",    35,   0.8,   8.7,   0.2,   96, "1 cup cubed"],
-    ["Fennel, raw",    31,   1.2,   7.3,   0.2,  100, "100g"],
-    ["Jicama, raw",    38,   0.7,   8.8,   0.1,  100, "100g"],
-    ["Kohlrabi, raw",    27,   1.7,   6.2,   0.1,  100, "100g"],
-    ["Leek, cooked",    31,   0.8,   7.6,   0.2,   52, "¼ cup"],
-    ["Lotus root, cooked",    66,   1.6,  16.0,   0.1,  100, "100g"],
-    ["Okra, cooked",    33,   1.9,   7.5,   0.2,   92, "½ cup"],
-    ["Parsnip, cooked",    71,   1.2,  17.0,   0.3,   78, "½ cup sliced"],
-    ["Plantain, cooked",   122,   0.8,  31.9,   0.2,  100, "½ medium"],
-    ["Plantain, raw",   122,   1.3,  31.9,   0.4,  100, "100g"],
-    ["Radish, raw",    16,   0.7,   3.4,   0.1,   58, "½ cup sliced"],
-    ["Rutabaga, cooked",    39,   1.2,   8.7,   0.2,  100, "100g"],
-    ["Shallot, raw",    72,   2.5,  16.8,   0.1,  100, "100g"],
-    ["Snow peas, raw",    42,   2.8,   7.6,   0.2,  100, "100g"],
-    ["Sorrel, raw",    22,   2.0,   3.2,   0.7,  100, "100g"],
-    ["Swiss chard, cooked",    20,   1.9,   4.1,   0.1,  175, "1 cup"],
-    ["Taro, cooked",   112,   0.5,  27.6,   0.2,  132, "1 cup sliced"],
-    ["Turnip, cooked",    22,   0.7,   4.8,   0.1,  156, "1 cup"],
-    ["Water chestnuts, canned",    36,   0.6,   8.7,   0.0,  100, "100g"],
-    ["Watercress, raw",    11,   2.3,   1.3,   0.1,  100, "100g"],
-    ["Yam, cooked",   118,   1.5,  27.9,   0.1,  136, "1 cup cubed"],
-    ["Chives, raw",    30,   3.3,   4.4,   0.7,  100, "100g"],
-    ["Cilantro / coriander leaf, raw",    23,   2.1,   3.7,   0.5,  100, "100g"],
-    ["Parsley, raw",    36,   3.0,   6.3,   0.8,  100, "100g"],
-    ["Basil, fresh",    23,   3.2,   2.6,   0.6,  100, "100g"],
-    ["Mint, fresh",    44,   3.3,   8.5,   0.7,  100, "100g"],
-    ["Dill, fresh",    43,   3.5,   7.0,   1.1,  100, "100g"],
-    ["Rosemary, fresh",   131,   3.3,  20.7,   5.9,  100, "100g"],
-    ["Thyme, fresh",   101,   5.6,  24.5,   1.7,  100, "100g"],
-    ["Oregano, fresh",   265,  11.0,  68.9,   4.3,  100, "100g"],
-    ["Ginger root, raw",    80,   1.8,  17.8,   0.8,    6, "1 tsp grated"],
-    ["Turmeric, ground",   354,   7.8,  64.9,   9.9,  100, "100g"],
-    ["Jalapeño, raw",    29,   0.9,   6.5,   0.4,   14, "1 pepper"],
-    ["Serrano pepper, raw",    32,   1.7,   6.7,   0.4,  100, "100g"],
-    ["Habanero pepper, raw",    36,   1.1,   8.8,   0.4,  100, "100g"],
-    ["Anaheim pepper, raw",    19,   1.0,   4.2,   0.2,  100, "100g"],
-    ["Banana pepper, raw",    27,   1.7,   5.4,   0.3,  100, "100g"],
-    ["Sun-dried tomato",   258,  14.1,  55.8,   3.0,   14, "5 pieces"],
-    ["Tomato, cherry, raw",    18,   0.9,   3.9,   0.2,  100, "100g"],
-    ["Tomato, grape, raw",    18,   0.9,   3.9,   0.2,  100, "100g"],
-    ["Tomato, roma, raw",    18,   0.9,   3.9,   0.2,  100, "100g"],
-    ["Tomato paste",    82,   4.3,  18.9,   0.5,   16, "1 tbsp"],
-    ["Tomato, canned diced",    20,   1.0,   4.4,   0.1,  130, "½ cup"],
-    ["Navy beans, cooked",   140,   8.2,  26.1,   0.6,  182, "1 cup"],
-    ["Great northern beans, cooked",   118,   8.3,  21.1,   0.5,  100, "100g"],
-    ["Lima beans, cooked",   115,   7.8,  20.9,   0.4,  170, "1 cup"],
-    ["Fava beans, cooked",   110,   7.6,  19.7,   0.4,  100, "100g"],
-    ["Cannellini beans, cooked",   130,   8.9,  23.1,   0.5,  180, "1 cup"],
-    ["Adzuki beans, cooked",   128,   7.5,  24.8,   0.1,  100, "100g"],
-    ["Black-eyed peas, cooked",   116,   7.7,  20.8,   0.5,  171, "1 cup"],
-    ["Mung beans, cooked",   105,   7.0,  19.2,   0.4,  202, "1 cup"],
-    ["Soybeans, cooked",   173,  16.6,   9.9,   9.0,  172, "1 cup"],
-    ["Tempeh",   193,  18.5,  10.9,  10.8,   84, "3 oz"],
-    ["Seitan",   370,  75.0,   7.5,   4.5,   85, "3 oz"],
-    ["Tofu, extra firm",    83,   9.9,   1.0,   4.8,  126, "3 oz"],
-    ["Edamame, in shell",    96,   8.9,   9.0,   3.8,  155, "1 cup"],
-    ["Miso, white",   199,  11.7,  26.5,   6.0,  100, "100g"],
-    ["Natto",   211,  17.7,  12.0,  11.0,  100, "100g"],
-    ["Lentils, red, cooked",   116,   8.9,  19.9,   0.4,  198, "1 cup"],
-    ["Lentils, green, cooked",   116,   9.0,  20.1,   0.4,  198, "1 cup"],
-    ["Pea protein powder",   391,  80.0,   6.0,   6.5,  100, "100g"],
-    ["Split peas, cooked",   118,   8.3,  21.1,   0.4,  196, "1 cup"],
-    ["Acai berry, raw",    70,   1.5,   4.0,   5.0,  100, "100g"],
-    ["Apricot, raw",    48,   1.4,  11.1,   0.4,   35, "1 apricot"],
-    ["Blackberries, raw",    43,   1.4,   9.6,   0.5,  144, "1 cup"],
-    ["Boysenberries, raw",    43,   1.0,  10.2,   0.2,  100, "100g"],
-    ["Cantaloupe, raw",    34,   0.8,   8.2,   0.2,  177, "1 cup diced"],
-    ["Clementine, raw",    47,   0.9,  12.0,   0.2,   74, "1 clementine"],
-    ["Coconut meat, raw",   354,   3.3,  15.2,  33.5,   40, "1 oz"],
-    ["Coconut meat, dried",   660,   7.0,  24.0,  64.5,  100, "100g"],
-    ["Cranberries, raw",    46,   0.4,  12.2,   0.1,  100, "100g"],
-    ["Currants, black, raw",    63,   1.4,  15.4,   0.4,  100, "100g"],
-    ["Dates, dried",   282,   2.5,  75.0,   0.4,   24, "1 medjool date"],
-    ["Dragon fruit, raw",    60,   1.2,  13.0,   0.4,  100, "½ cup"],
-    ["Durian, raw",   147,   1.5,  27.1,   5.3,  100, "100g"],
-    ["Elderberries, raw",    73,   0.7,  18.4,   0.5,  100, "100g"],
-    ["Figs, fresh",    74,   0.8,  19.2,   0.3,   50, "1 medium fig"],
-    ["Figs, dried",   249,   3.3,  63.9,   0.9,    9, "1 small fig"],
-    ["Gooseberries, raw",    44,   0.9,  10.2,   0.6,  100, "100g"],
-    ["Guava, raw",    68,   2.6,  14.3,   1.0,   55, "½ cup"],
-    ["Honeydew melon, raw",    36,   0.5,   9.1,   0.1,  177, "1 cup diced"],
-    ["Jackfruit, raw",    95,   1.7,  23.3,   0.6,  165, "1 cup sliced"],
-    ["Kiwi, raw",    61,   1.1,  14.7,   0.5,   76, "1 medium kiwi"],
-    ["Kumquat, raw",    71,   1.9,  15.9,   0.9,  100, "100g"],
-    ["Lychee, raw",    66,   0.8,  16.5,   0.4,  100, "100g"],
-    ["Mandarin orange, raw",    53,   0.8,  13.3,   0.3,  100, "100g"],
-    ["Nectarine, raw",    44,   1.1,  10.6,   0.3,  100, "100g"],
-    ["Papaya, raw",    43,   0.5,  10.8,   0.3,  145, "1 cup cubed"],
-    ["Passion fruit, raw",    97,   2.2,  23.4,   0.7,  100, "100g"],
-    ["Persimmon, raw",    70,   0.6,  18.6,   0.2,  100, "100g"],
-    ["Plum, raw",    46,   0.7,  11.4,   0.3,   66, "1 medium plum"],
-    ["Pomegranate seeds",    83,   1.7,  18.7,   1.2,   87, "½ cup"],
-    ["Pomelo, raw",    38,   0.8,   9.6,   0.0,  100, "100g"],
-    ["Prickly pear, raw",    41,   0.7,   9.6,   0.5,  100, "100g"],
-    ["Prunes / dried plums",   240,   2.2,  63.9,   0.4,   17, "1 prune"],
-    ["Raisins",   299,   3.1,  79.2,   0.5,   43, "¼ cup"],
-    ["Dried cranberries, sweetened",   308,   0.1,  82.3,   1.1,   40, "¼ cup"],
-    ["Dried apricots",   241,   3.4,  62.6,   0.5,   13, "3 pieces"],
-    ["Dried mango",   319,   2.4,  78.0,   1.2,  100, "100g"],
-    ["Dried pineapple",   346,   2.5,  85.5,   0.8,  100, "100g"],
-    ["Star fruit / carambola, raw",    31,   1.0,   6.7,   0.3,  100, "100g"],
-    ["Tamarind, raw",   239,   2.8,  62.5,   0.6,  100, "100g"],
-    ["Tangerine, raw",    53,   0.8,  13.3,   0.3,   88, "1 medium"],
-    ["Ugli fruit, raw",    45,   0.8,  11.2,   0.1,  100, "100g"],
-    ["Breadfruit, cooked",   119,   1.2,  30.9,   0.2,  100, "100g"],
-    ["Plantain chips",   519,   2.6,  57.5,  31.5,  100, "100g"],
-    ["Fruit salad, canned in juice",    50,   0.5,  13.0,   0.1,  100, "100g"],
-    ["Almonds, blanched",   576,  21.3,  19.7,  50.6,  100, "100g"],
-    ["Almonds, roasted",   598,  21.0,  22.2,  52.5,  100, "100g"],
-    ["Almond butter",   614,  21.0,  19.0,  55.5,   32, "2 tbsp"],
-    ["Almond flour",   571,  21.4,  21.4,  50.0,  100, "100g"],
-    ["Brazil nuts",   659,  14.3,  12.3,  67.1,   28, "1 oz / 6 nuts"],
-    ["Macadamia nuts",   718,   7.9,  13.8,  75.8,   28, "1 oz / 10-12 nuts"],
-    ["Pecans",   691,   9.2,  13.9,  72.0,   28, "1 oz / 19 halves"],
-    ["Pine nuts",   673,  13.7,  13.1,  68.4,   28, "1 oz"],
-    ["Hazelnuts",   628,  15.0,  16.7,  60.8,   28, "1 oz / 21 nuts"],
-    ["Hemp seeds",   553,  31.6,   8.7,  48.8,   30, "3 tbsp"],
-    ["Pumpkin seeds, roasted",   574,  29.8,  14.7,  49.0,   28, "1 oz"],
-    ["Sesame seeds",   573,  17.7,  23.5,  49.7,    9, "1 tbsp"],
-    ["Poppy seeds",   525,  17.9,  28.1,  41.6,  100, "100g"],
-    ["Black sesame seeds",   573,  17.7,  23.5,  49.7,  100, "100g"],
-    ["Tahini / sesame paste",   595,  17.0,  21.2,  53.8,   15, "1 tbsp"],
-    ["Peanut flour, defatted",   327,  52.2,  28.8,   0.6,  100, "100g"],
-    ["Walnut oil",   884,   0.0,   0.0, 100.0,  100, "100g"],
-    ["Almond oil",   884,   0.0,   0.0, 100.0,  100, "100g"],
-    ["Hazelnut oil",   884,   0.0,   0.0, 100.0,  100, "100g"],
-    ["Sesame oil",   884,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["Peanut oil",   884,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["Flaxseed oil",   884,   0.0,   0.0, 100.0,   14, "1 tbsp"],
-    ["MCT oil",   830,   0.0,   0.0,  93.0,   14, "1 tbsp"],
-    ["Ghee",   876,   0.3,   0.0,  99.8,   13, "1 tbsp"],
-    ["Lard",   898,   0.0,   0.0, 100.0,   13, "1 tbsp"],
-    ["Shortening, vegetable",   884,   0.0,   0.0, 100.0,  100, "100g"],
-    ["White sugar",   387,   0.0, 100.0,   0.0,    4, "1 tsp"],
-    ["Brown sugar",   377,   0.0,  97.3,   0.0,    4, "1 tsp"],
-    ["Powdered sugar",   389,   0.0,  99.8,   0.0,  100, "100g"],
-    ["Agave nectar",   310,   0.1,  76.0,   0.3,   21, "1 tbsp"],
-    ["Molasses",   290,   0.0,  74.7,   0.1,   20, "1 tbsp"],
-    ["Corn syrup, light",   282,   0.0,  76.1,   0.0,  100, "100g"],
-    ["Stevia, pure",     0,   0.0,   0.9,   0.0,  100, "100g"],
-    ["Erythritol",    20,   0.0, 100.0,   0.0,  100, "100g"],
-    ["Xylitol",   240,   0.0, 100.0,   0.0,  100, "100g"],
-    ["Cocoa powder, unsweetened",   228,  19.6,  57.9,  13.7,    5, "1 tbsp"],
-    ["Chocolate chips, semisweet",   512,   5.2,  63.0,  30.0,  100, "100g"],
-    ["Chocolate chips, white",   561,   6.5,  59.2,  33.0,  100, "100g"],
-    ["Baking powder",    53,   0.0,  27.7,   0.0,  100, "100g"],
-    ["Baking soda",     0,   0.0,   0.0,   0.0,  100, "100g"],
-    ["Vanilla extract",   288,   0.1,  12.7,   0.1,  100, "100g"],
-    ["Coconut sugar",   375,   0.0,  97.0,   0.0,  100, "100g"],
-    ["Date syrup",   304,   1.5,  75.0,   0.2,  100, "100g"],
-    ["Rice syrup",   318,   0.3,  78.0,   0.0,  100, "100g"],
-    ["Caramel sauce",   367,   2.6,  67.7,  12.1,   41, "2 tbsp"],
-    ["Nutella / chocolate hazelnut spread",   541,   6.0,  57.5,  30.9,   37, "2 tbsp"],
-    ["Almond butter, raw",   614,  21.0,  19.0,  55.5,   32, "2 tbsp"],
-    ["Sunflower butter",   594,  20.0,  16.5,  52.5,   32, "2 tbsp"],
-    ["Cashew butter",   587,  17.0,  28.0,  49.5,   32, "2 tbsp"],
-    ["Grapefruit juice",    39,   0.5,   9.2,   0.1,  100, "100g"],
-    ["Pineapple juice",    53,   0.4,  12.9,   0.1,  100, "100g"],
-    ["Cranberry juice, sweetened",    46,   0.1,  12.2,   0.1,  100, "100g"],
-    ["Grape juice",    60,   0.4,  14.9,   0.1,  100, "100g"],
-    ["Tomato juice",    17,   0.8,   4.2,   0.1,  100, "100g"],
-    ["Carrot juice",    40,   0.9,   9.3,   0.2,  100, "100g"],
-    ["Beet juice",    44,   1.7,  10.0,   0.2,  100, "100g"],
-    ["Celery juice",    17,   0.7,   3.0,   0.2,  100, "100g"],
-    ["Green juice, prepared",    42,   2.0,   8.0,   0.5,  100, "100g"],
-    ["Lemonade",    40,   0.1,  10.5,   0.1,  240, "1 cup"],
-    ["Limeade",    39,   0.0,  10.5,   0.0,  100, "100g"],
-    ["Coconut water",    19,   0.7,   3.7,   0.2,  240, "1 cup"],
-    ["Sports drink, Gatorade",    26,   0.0,   6.8,   0.0,  355, "12 oz"],
-    ["Energy drink, avg",    45,   0.5,  11.0,   0.0,  250, "8.4 oz can"],
-    ["Coffee, cold brew, black",     4,   0.5,   0.5,   0.0,  354, "12 oz"],
-    ["Coffee, espresso",    12,   0.6,   1.4,   0.0,   30, "1 shot"],
-    ["Coffee, cappuccino, whole milk",    56,   3.2,   5.5,   2.2,  177, "6 oz"],
-    ["Coffee, flat white, whole milk",    65,   3.5,   4.8,   3.5,  100, "100g"],
-    ["Coffee, americano, black",     5,   0.3,   0.7,   0.0,  237, "8 oz"],
-    ["Coffee, frappuccino, avg",   159,   2.0,  29.0,   4.5,  100, "100g"],
-    ["Coffee, mocha, whole milk",   110,   3.5,  14.0,   4.5,  354, "12 oz"],
-    ["Coffee, macchiato",    26,   1.5,   2.6,   1.0,  100, "100g"],
-    ["Matcha latte, whole milk",    95,   4.0,   9.0,   4.5,  240, "8 oz"],
-    ["Green tea, unsweetened",     1,   0.2,   0.0,   0.0,  237, "1 cup"],
-    ["Black tea, unsweetened",     1,   0.0,   0.3,   0.0,  237, "1 cup"],
-    ["Herbal tea, unsweetened",     2,   0.0,   0.5,   0.0,  100, "100g"],
-    ["Chai tea latte, whole milk",   120,   4.0,  17.5,   3.5,  100, "100g"],
-    ["Hot chocolate, whole milk",   120,   3.8,  18.5,   3.8,  100, "100g"],
-    ["Beer, regular lager",    43,   0.5,   3.6,   0.0,  355, "12 oz can"],
-    ["Beer, light",    29,   0.3,   1.6,   0.0,  355, "12 oz can"],
-    ["Beer, stout",    49,   0.4,   5.3,   0.0,  355, "12 oz can"],
-    ["Beer, IPA",    59,   0.5,   5.0,   0.0,  355, "12 oz can"],
-    ["Wine, red",    85,   0.1,   2.6,   0.0,  148, "5 oz glass"],
-    ["Wine, white",    82,   0.1,   2.6,   0.0,  148, "5 oz glass"],
-    ["Wine, rosé",    83,   0.1,   3.0,   0.0,  148, "5 oz glass"],
-    ["Wine, sparkling / Champagne",    77,   0.3,   1.4,   0.0,  148, "5 oz glass"],
-    ["Spirits, vodka 80 proof",   231,   0.0,   0.0,   0.0,   44, "1.5 oz shot"],
-    ["Spirits, whiskey 80 proof",   231,   0.0,   0.0,   0.0,   44, "1.5 oz shot"],
-    ["Spirits, rum 80 proof",   231,   0.0,   0.0,   0.0,   44, "1.5 oz shot"],
-    ["Spirits, gin 80 proof",   263,   0.0,   0.0,   0.0,  100, "100g"],
-    ["Spirits, tequila 80 proof",   231,   0.0,   0.0,   0.0,   44, "1.5 oz shot"],
-    ["Margarita, prepared",   271,   0.5,  17.5,   0.1,  100, "100g"],
-    ["Bloody Mary, prepared",    65,   0.8,   5.5,   0.2,  100, "100g"],
-    ["Piña colada, prepared",   245,   0.8,  25.0,   5.0,  100, "100g"],
-    ["Mojito, prepared",   136,   0.1,  18.5,   0.1,  100, "100g"],
-    ["Kombucha, plain",    14,   0.0,   3.0,   0.0,  240, "1 cup"],
-    ["Kefir water, plain",    19,   0.1,   4.7,   0.0,  100, "100g"],
-    ["Smoothie, fruit, store-bought",    63,   0.7,  14.5,   0.3,  250, "1 bottle"],
-    ["Protein smoothie, prepared",   155,  18.5,  12.5,   2.5,  100, "100g"],
-    ["Meal replacement shake, avg",   175,  15.0,  18.0,   4.5,  100, "100g"],
-    ["Casein protein powder",   352,  75.0,   7.2,   2.0,   35, "1 scoop"],
-    ["Egg white protein powder",   371,  78.0,   4.8,   1.5,   30, "1 scoop"],
-    ["Collagen peptides powder",   354,  90.0,   0.0,   0.0,   11, "1 scoop"],
-    ["BCAA powder",   390,  80.0,   0.0,   0.0,  100, "100g"],
-    ["Creatine powder",     0,   0.0,   0.0,   0.0,  100, "100g"],
-    ["Pre-workout powder, avg",    20,   0.5,   3.5,   0.0,  100, "100g"],
-    ["Mass gainer shake, avg",   380,  28.0,  56.0,   5.0,  100, "100g"],
-    ["Greek yogurt, high protein",    90,  15.0,   5.5,   0.5,  150, "1 container"],
-    ["Cottage cheese, high protein",    85,  13.5,   2.8,   2.0,  226, "1 cup"],
-    ["Skyr, plain",    67,  11.0,   4.0,   0.2,  170, "¾ cup"],
-    ["Quark, plain",    62,   8.5,   4.0,   0.3,  100, "100g"],
-    ["Beef jerky, peppered",   409,  32.5,  11.5,  25.0,   28, "1 oz"],
-    ["Turkey jerky",   323,  39.5,  15.0,   8.0,   28, "1 oz"],
-    ["Salmon jerky",   265,  37.0,  12.0,   7.5,  100, "100g"],
-    ["Pork rinds / chicharrones",   544,  61.3,   0.0,  32.5,  100, "100g"],
-    ["String cheese, mozzarella",   283,  24.0,   3.5,  19.0,   28, "1 stick"],
-    ["Babybel cheese",   323,  21.0,   0.0,  26.5,  100, "100g"],
-    ["Rice crackers, plain",   380,   6.5,  84.0,   1.0,   28, "1 oz"],
-    ["Veggie chips",   520,   5.0,  55.0,  31.5,  100, "100g"],
-    ["Baked chips, potato",   390,   5.0,  69.0,  12.0,  100, "100g"],
-    ["Multigrain chips",   467,   7.0,  66.0,  18.5,  100, "100g"],
-    ["Pita chips, baked",   400,  10.5,  59.0,  13.5,  100, "100g"],
-    ["Popcorn, microwave, butter",   455,   9.0,  53.0,  23.5,   27, "1 cup"],
-    ["Popcorn, kettle",   388,  11.0,  67.5,  10.0,   28, "1 oz"],
-    ["Cheez-Its, crackers",   493,  10.0,  57.0,  25.0,   30, "27 crackers"],
-    ["Goldfish crackers",   473,  10.0,  63.0,  19.5,   30, "55 crackers"],
-    ["RITZ crackers",   500,   7.0,  62.5,  23.5,   16, "5 crackers"],
-    ["Triscuits",   400,  10.0,  62.5,  12.5,   28, "6 crackers"],
-    ["Wheat Thins",   430,   8.5,  67.0,  14.0,   29, "16 crackers"],
-    ["Pork cracklings",   544,  61.3,   0.0,  32.5,   28, "1 oz"],
-    ["Edamame, dry roasted",   490,  38.0,  30.0,  25.0,  100, "100g"],
-    ["Chickpeas, dry roasted",   444,  20.0,  56.5,  13.0,  100, "100g"],
-    ["Broad beans, roasted",   447,  27.0,  60.0,   5.0,  100, "100g"],
-    ["Mixed nuts, salted",   607,  14.5,  23.5,  52.5,   28, "1 oz"],
-    ["Trail mix, with M&Ms",   484,  11.0,  55.5,  25.0,   40, "¼ cup"],
-    ["Dried fruit and nut mix",   429,   8.0,  61.5,  18.5,  100, "100g"],
-    ["Yogurt covered raisins",   393,   4.0,  73.0,  12.5,  100, "100g"],
-    ["Fruit snacks / gummies",   330,   1.5,  81.5,   0.5,  100, "100g"],
-    ["Veggie straw snacks",   528,   4.5,  61.5,  28.0,  100, "100g"],
-    ["Gummy bears",   330,   5.5,  80.0,   0.0,   17, "10 bears"],
-    ["Gummy worms",   325,   4.5,  80.0,   0.0,  100, "100g"],
-    ["Sour candy / Sour Patch Kids",   345,   0.0,  87.0,   0.0,  100, "100g"],
-    ["Hard candy / lollipop",   396,   0.0,  98.0,   0.0,   14, "3 pieces"],
-    ["Jelly beans",   367,   0.0,  93.0,   0.1,  100, "100g"],
-    ["Skittles",   413,   0.0,  91.5,   4.5,   56, "1 snack size"],
-    ["M&Ms, plain",   491,   4.5,  71.0,  21.0,   42, "1 fun-size pack"],
-    ["Reese's Peanut Butter Cups",   521,  10.0,  58.0,  30.0,   42, "2 cups"],
-    ["Snickers bar",   488,   8.0,  58.5,  25.0,   52, "1 fun-size"],
-    ["Kit Kat bar",   518,   6.0,  63.5,  26.0,   42, "2-piece bar"],
-    ["Twix bar",   495,   5.0,  65.0,  24.0,   50, "1 bar"],
-    ["Almond Joy",   489,   5.0,  58.5,  27.0,  100, "100g"],
-    ["Three Musketeers",   429,   3.0,  73.5,  15.0,  100, "100g"],
-    ["Milky Way",   469,   5.0,  67.0,  19.5,  100, "100g"],
-    ["Butterfinger",   475,   6.5,  71.0,  20.0,  100, "100g"],
-    ["Caramel candy",   380,   2.5,  71.5,  11.0,  100, "100g"],
-    ["Fudge, chocolate",   411,   3.0,  73.5,  13.0,  100, "100g"],
-    ["Peanut brittle",   461,  10.5,  68.5,  17.5,   42, "1.5 oz"],
-    ["Marshmallows",   318,   1.8,  81.0,   0.2,   28, "4 large"],
-    ["Candy corn",   380,   0.0,  95.0,   0.0,  100, "100g"],
-    ["Tootsie Roll",   388,   2.0,  87.0,   6.0,  100, "100g"],
-    ["Licorice, red",   349,   3.0,  81.0,   1.0,  100, "100g"],
-    ["Chocolate fudge",   405,   2.5,  70.0,  14.0,  100, "100g"],
-    ["Halvah",   529,  12.5,  60.0,  29.5,  100, "100g"],
-    ["Marzipan",   467,  10.0,  61.0,  21.5,  100, "100g"],
-    ["Chocolate cake, with frosting",   371,   4.5,  53.5,  16.5,   95, "1 slice"],
-    ["Vanilla cake, with frosting",   376,   3.5,  57.0,  15.5,   95, "1 slice"],
-    ["Carrot cake, with frosting",   373,   3.8,  51.5,  17.5,   95, "1 slice"],
-    ["Red velvet cake",   378,   4.0,  54.0,  16.5,  100, "100g"],
-    ["Cheesecake, plain",   321,   5.5,  25.5,  22.5,   80, "1 slice"],
-    ["Cheesecake, New York style",   325,   5.5,  27.5,  22.5,   80, "1 slice"],
-    ["Pound cake",   385,   5.8,  48.0,  19.5,  100, "100g"],
-    ["Angel food cake",   258,   6.4,  57.8,   0.2,  100, "100g"],
-    ["Lemon pound cake",   391,   4.8,  52.0,  19.0,  100, "100g"],
-    ["Banana bread",   326,   5.0,  53.5,  11.0,  100, "100g"],
-    ["Zucchini bread",   327,   4.5,  47.5,  14.5,  100, "100g"],
-    ["Pumpkin bread",   303,   4.5,  51.5,  10.0,  100, "100g"],
-    ["Apple pie",   237,   2.2,  34.0,  10.8,  125, "1 slice"],
-    ["Pumpkin pie",   227,   4.0,  30.5,  10.8,  109, "1 slice"],
-    ["Pecan pie",   423,   5.0,  61.5,  19.5,  113, "1 slice"],
-    ["Cherry pie",   261,   2.5,  37.0,  11.5,  100, "100g"],
-    ["Blueberry pie",   253,   2.5,  37.0,  11.0,  100, "100g"],
-    ["Lemon meringue pie",   265,   2.0,  50.0,   7.5,  100, "100g"],
-    ["Strawberry shortcake",   292,   4.0,  43.5,  12.0,  100, "100g"],
-    ["Chocolate mousse",   259,   4.5,  21.5,  17.5,  100, "100g"],
-    ["Crème brûlée",   195,   3.5,  19.0,  12.0,  100, "100g"],
-    ["Profiteroles",   349,   9.0,  28.5,  22.0,  100, "100g"],
-    ["Eclair",   275,   6.0,  27.5,  15.0,  100, "100g"],
-    ["Baklava",   428,   7.5,  48.0,  24.5,   85, "1 piece"],
-    ["Churros",   375,   5.0,  48.5,  19.0,   75, "2 churros"],
-    ["Funnel cake",   381,   6.0,  47.5,  19.5,  100, "100g"],
-    ["Beignets",   430,   7.0,  56.0,  20.5,  100, "100g"],
-    ["Crepes with Nutella",   320,   6.5,  40.0,  14.5,  100, "100g"],
-    ["Waffles with syrup and butter",   315,   7.5,  49.0,  10.5,  100, "100g"],
-    ["Frozen meal, chicken rice broccoli",   118,   9.5,  11.5,   3.5,  100, "100g"],
-    ["Frozen meal, beef and vegetables",    96,   8.5,   9.5,   2.5,  100, "100g"],
-    ["Frozen meal, mac and cheese",   163,   5.5,  22.5,   6.0,  100, "100g"],
-    ["Frozen meal, turkey dinner",   108,   7.5,  13.5,   2.5,  100, "100g"],
-    ["Frozen pizza, pepperoni",   259,  11.0,  27.5,  12.0,  100, "100g"],
-    ["Frozen burrito, bean cheese",   217,   7.5,  30.0,   8.0,  100, "100g"],
-    ["Frozen lasagna",   130,   8.0,  13.5,   5.0,  100, "100g"],
-    ["Tater tots, frozen, baked",   177,   2.0,  23.0,   8.5,  100, "100g"],
-    ["Fish sticks, frozen, baked",   195,  11.5,  17.5,   8.0,  100, "100g"],
-    ["Chicken strips, frozen, baked",   217,  17.5,  13.0,   9.5,  100, "100g"],
-    ["Frozen edamame",   109,  11.0,   8.5,   4.5,  100, "100g"],
-    ["Frozen peas and carrots",    50,   2.8,   9.0,   0.2,  100, "100g"],
-    ["Frozen broccoli, cooked",    35,   2.4,   6.6,   0.4,  100, "100g"],
-    ["Frozen corn, cooked",    86,   3.0,  20.2,   0.8,  100, "100g"],
-    ["Frozen spinach, cooked",    22,   2.7,   3.5,   0.2,  100, "100g"],
-    ["Frozen mixed vegetables, cooked",    60,   2.5,  12.8,   0.2,  100, "100g"],
-    ["Ice pop / popsicle",    60,   0.1,  15.4,   0.1,  100, "100g"],
-    ["Frozen fruit bar",    73,   0.5,  18.0,   0.5,  100, "100g"],
-    ["Klondike bar",   290,   4.0,  33.5,  16.5,  100, "100g"],
-    ["Ice cream sandwich",   217,   3.5,  33.0,   8.0,  100, "100g"],
-    ["Drumstick ice cream cone",   298,   4.5,  40.5,  14.0,  100, "100g"],
-    ["Canned chicken breast",   132,  26.0,   0.0,   3.0,  100, "100g"],
-    ["Canned ham",   163,  21.0,   0.0,   8.4,  100, "100g"],
-    ["SPAM, classic",   309,  13.3,   3.1,  26.4,  100, "100g"],
-    ["Vienna sausages, canned",   252,  11.2,   1.1,  22.5,  100, "100g"],
-    ["Chili with beans, canned",   101,   6.5,  10.5,   3.5,  100, "100g"],
-    ["Pork and beans, canned",   130,   6.0,  23.5,   1.5,  100, "100g"],
-    ["Tomato bisque, canned",    60,   1.5,   9.5,   2.0,  100, "100g"],
-    ["Chicken broth, low sodium",    15,   1.8,   1.5,   0.5,  100, "100g"],
-    ["Beef broth",    17,   2.5,   1.0,   0.5,  100, "100g"],
-    ["Vegetable broth",    12,   0.5,   2.5,   0.0,  100, "100g"],
-    ["Coconut milk, canned, full fat",   197,   2.0,   6.0,  21.3,  100, "100g"],
-    ["Coconut cream, canned",   330,   3.1,   6.8,  34.7,  100, "100g"],
-    ["Tomatoes, diced, canned",    20,   1.0,   4.4,   0.1,  100, "100g"],
-    ["Tomatoes, crushed, canned",    32,   1.6,   6.4,   0.5,  100, "100g"],
-    ["Olives, black, canned",   115,   0.8,   6.3,  10.9,  100, "100g"],
-    ["Olives, green, canned",   145,   1.0,   3.8,  15.3,  100, "100g"],
-    ["Roasted red peppers, canned",    25,   1.0,   5.0,   0.5,  100, "100g"],
-    ["Jalapeños, pickled, canned",    17,   0.7,   3.7,   0.2,  100, "100g"],
-    ["Sauerkraut, canned",    20,   0.9,   4.3,   0.1,  100, "100g"],
-    ["Pickles, dill",    11,   0.4,   2.3,   0.2,  100, "100g"],
-    ["Pickles, bread and butter",    68,   0.4,  17.3,   0.2,  100, "100g"],
-    ["Relish, sweet pickle",    91,   0.3,  22.5,   0.2,  100, "100g"],
-    ["Capers, canned",    23,   2.4,   4.9,   0.9,  100, "100g"],
-    ["Anchovies, canned",   210,  29.0,   0.0,   9.7,  100, "100g"],
-    ["Crab meat, canned",    82,  17.4,   0.0,   1.0,   85, "3 oz"],
-    ["Clams, canned",   148,  25.5,   5.1,   2.0,   85, "3 oz"],
-    ["Sour cream, fat-free",    66,   5.0,   9.3,   0.0,   28, "2 tbsp"],
-    ["Cream cheese, light",   200,   8.5,   5.5,  16.5,   29, "2 tbsp"],
-    ["Whipped butter",   643,   0.5,   0.0,  72.0,   11, "1 tbsp"],
-    ["Margarine",   717,   0.2,   0.2,  80.7,   14, "1 tbsp"],
-    ["Cooking spray, avg",   820,   0.0,   0.0,  91.0,  100, "100g"],
-    ["Nutritional yeast",   325,  50.0,  37.0,   5.0,   16, "2 tbsp"],
-    ["Brewer's yeast",   105,  12.5,  13.3,   0.8,  100, "100g"],
-    ["Gelatin, unflavored",   335,  85.6,   0.0,   0.1,  100, "100g"],
-    ["Arrowroot starch",   357,   0.3,  88.2,   0.1,  100, "100g"],
-    ["Tapioca starch",   358,   0.0,  88.7,   0.0,  100, "100g"],
-    ["Cornstarch",   381,   0.3,  91.3,   0.1,  100, "100g"],
-    ["Bread flour",   361,  13.5,  72.5,   1.5,  100, "100g"],
-    ["All-purpose flour, white",   364,  10.3,  76.3,   1.0,  100, "100g"],
-    ["Whole wheat flour",   340,  13.2,  72.0,   2.5,  100, "100g"],
-    ["Coconut flour",   399,  19.3,  60.0,  14.5,  100, "100g"],
-    ["Oat flour",   404,  14.7,  65.7,   9.0,  100, "100g"],
-    ["Chickpea flour",   387,  22.4,  57.8,   6.7,  100, "100g"],
-    ["Cake flour",   362,   8.0,  79.8,   1.0,  100, "100g"],
-    ["Self-rising flour",   354,   9.7,  74.9,   1.0,  100, "100g"],
-    ["Panko breadcrumbs",   393,   9.7,  80.6,   3.6,   30, "¼ cup"],
-    ["Beyond Burger, cooked",   274,  19.5,   8.5,  18.5,  100, "100g"],
-    ["Impossible Burger, cooked",   258,  19.0,  10.5,  16.5,  100, "100g"],
-    ["Plant-based sausage, cooked",   200,  17.0,   7.0,  12.0,  100, "100g"],
-    ["Plant-based bacon, cooked",   183,  13.0,  12.0,   9.0,  100, "100g"],
-    ["Plant-based chicken, cooked",   187,  18.5,   7.5,  10.0,  100, "100g"],
-    ["Plant-based ground beef",   218,  17.5,   8.0,  12.5,  100, "100g"],
-    ["Vegan cheese, cheddar style",   298,   4.5,  16.5,  23.5,  100, "100g"],
-    ["Oat milk, barista",    55,   1.7,   7.5,   2.0,  240, "1 cup"],
-    ["Cashew milk, unsweetened",    19,   0.4,   1.3,   1.3,  240, "1 cup"],
-    ["Hemp milk, unsweetened",    36,   2.0,   1.0,   2.5,  240, "1 cup"],
-    ["Coconut yogurt, plain",    85,   1.0,   9.5,   5.0,  170, "¾ cup"],
-    ["Almond yogurt, plain",    68,   2.5,   8.0,   3.0,  170, "¾ cup"],
-    ["Soy yogurt, plain",    66,   3.0,   9.0,   1.5,  170, "¾ cup"],
-    ["Vegan butter",   717,   0.5,   0.0,  80.0,  100, "100g"],
-    ["Vegan mayo",   680,   0.5,   2.0,  72.0,   14, "1 tbsp"],
-    ["Jackfruit, canned in brine",    35,   1.5,   8.5,   0.1,  100, "100g"],
-    ["Mushroom, lion's mane",    35,   2.5,   6.5,   0.3,  100, "100g"],
-    ["Mushroom, shiitake, cooked",    56,   1.6,  14.3,   0.2,  100, "100g"],
-    ["Mushroom, portobello, cooked",    29,   3.0,   5.1,   0.5,  100, "100g"],
-    ["Mushroom, oyster, raw",    33,   3.3,   6.1,   0.4,  100, "100g"],
-    ["Cauliflower rice, raw",    25,   2.0,   5.3,   0.3,  100, "100g"],
-    ["Zucchini noodles / zoodles",    17,   1.2,   3.1,   0.3,  100, "100g"],
-    ["Spaghetti squash, cooked",    31,   0.6,   6.9,   0.6,  100, "100g"],
-    ["Hearts of palm, canned",    36,   2.7,   5.7,   0.4,  100, "100g"],
-    ["Instant oatmeal, plain",   352,  12.0,  68.5,   6.5,   28, "1 packet"],
-    ["Instant oatmeal, maple brown sugar",   371,   8.0,  76.0,   5.0,   43, "1 packet"],
-    ["Cream of rice, cooked",    71,   1.4,  16.0,   0.1,  100, "100g"],
-    ["Grits, quick, cooked",    71,   1.7,  15.7,   0.4,  100, "100g"],
-    ["Bread, pita, white, toasted",   298,   9.5,  59.0,   1.5,  100, "100g"],
-    ["Breadstick, plain",   415,  11.5,  72.5,   7.5,  100, "100g"],
-    ["Croutons, plain",   407,  11.0,  72.0,  10.0,  100, "100g"],
-    ["Stuffing, prepared",   178,   3.7,  21.7,   8.6,  100, "100g"],
-    ["Cornbread dressing",   212,   5.0,  27.5,   9.5,  100, "100g"],
-    ["Injera, Ethiopian flatbread",   137,   5.6,  26.6,   0.8,  100, "100g"],
-    ["Fufu / pounded yam",   118,   1.5,  27.9,   0.2,  100, "100g"],
-    ["Plantain fufu",   120,   1.2,  29.5,   0.3,  100, "100g"],
-    ["Ugali / cornmeal porridge",    89,   2.0,  21.0,   0.3,  100, "100g"],
-    ["Jollof rice, prepared",   165,   4.5,  27.5,   4.5,  100, "100g"],
-    ["Suya, beef kebab",   275,  26.0,   4.5,  16.5,  100, "100g"],
-    ["Pho broth, beef, prepared",    25,   3.0,   2.0,   0.5,  100, "100g"],
-    ["Kimchi, prepared",    15,   1.1,   2.4,   0.5,  100, "100g"],
-    ["Sauerkraut, prepared",    19,   0.9,   4.3,   0.1,  100, "100g"],
-    ["Miso soup, prepared, low sodium",    25,   2.0,   3.0,   0.5,  100, "100g"],
-    ["Borscht, prepared",    51,   2.5,   7.5,   1.5,  100, "100g"],
-    ["Pierogi, potato cheese, cooked",   193,   5.5,  27.0,   7.0,  100, "100g"],
-    ["Colcannon, prepared",    97,   2.0,  13.5,   4.5,  100, "100g"],
-    ["Cottage pie, prepared",   112,   7.5,   9.5,   4.5,  100, "100g"],
-    ["Welsh rarebit",   261,  12.5,  13.5,  17.5,  100, "100g"],
-    ["Haggis, cooked",   295,  18.0,  13.5,  17.5,  100, "100g"],
-    ["Scotch egg",   244,  14.5,   9.5,  16.5,  100, "100g"],
-    ["Bangers and mash",   164,   8.0,  14.0,   8.5,  100, "100g"],
-    ["Full English breakfast, avg",   309,  18.5,  16.5,  19.0,  100, "100g"],
-    ["Empanada, beef, baked",   265,  12.5,  28.0,  11.0,  100, "100g"],
-    ["Pupusa, corn, cheese",   256,   9.0,  33.0,  10.0,  100, "100g"],
-    ["Arepa, corn",   228,   5.0,  38.5,   5.5,  100, "100g"],
-    ["Ceviche, shrimp",    79,   9.5,   5.5,   1.5,  100, "100g"],
-    ["Fried plantains, sweet",   171,   1.0,  38.5,   4.0,  100, "100g"],
-    ["Tostones, fried",   210,   1.5,  31.0,   9.5,  100, "100g"],
-    ["Mofongo, prepared",   213,   4.0,  34.0,   8.0,  100, "100g"],
-    ["Ropa vieja, prepared",   175,  20.0,   5.0,   8.0,  100, "100g"],
-    ["Cuban rice and beans",   162,   5.5,  29.0,   2.5,  100, "100g"],
-    ["Jerk chicken, prepared",   211,  26.0,   4.5,   9.5,  100, "100g"],
-    ["Patties, Jamaican beef",   256,  10.0,  24.5,  12.5,  100, "100g"],
-    ["Poutine, prepared",   289,   9.5,  33.0,  14.0,  100, "100g"],
-    ["Tourtière, prepared",   269,  14.5,  16.5,  16.0,  100, "100g"],
-    ["Smoothie, green, prepared",    53,   1.5,   9.0,   1.5,  100, "100g"],
-    ["Smoothie, berry, prepared",    61,   1.0,  12.5,   1.0,  100, "100g"],
-    ["Smoothie, tropical, prepared",    68,   0.8,  15.0,   0.8,  100, "100g"],
-    ["Bone broth, beef",    40,   8.0,   0.5,   0.5,  100, "100g"],
-    ["Bone broth, chicken",    38,   7.5,   0.5,   0.5,  100, "100g"],
-    ["Collagen broth",    35,   8.0,   0.5,   0.0,  100, "100g"],
-    ["Meal prep chicken and rice",   132,  14.0,  12.0,   3.0,  100, "100g"],
-    ["Meal prep turkey and sweet potato",   124,  13.0,  12.5,   2.5,  100, "100g"],
-    ["Meal prep salmon and quinoa",   195,  18.0,  12.5,   7.0,  100, "100g"],
-    ["Meal prep beef and vegetables",   155,  16.0,  10.0,   5.0,  100, "100g"],
+    ["Egg, whole, raw",   143,  12.6,   0.7,   9.5],
+    ["Egg, whole, boiled",   155,  13.0,   1.1,  10.6],
+    ["Egg, fried",   196,  13.6,   0.8,  14.8],
+    ["Egg, scrambled",   149,  10.1,   1.6,  11.2],
+    ["Egg white, raw",    52,  10.9,   0.7,   0.2],
+    ["Egg yolk, raw",   322,  15.9,   3.6,  26.5],
+    ["Chicken breast, roasted",   165,  31.0,   0.0,   3.6],
+    ["Chicken breast, raw",   120,  22.5,   0.0,   2.6],
+    ["Chicken thigh, roasted",   209,  26.0,   0.0,  10.9],
+    ["Chicken thigh, raw",   119,  17.4,   0.0,   5.5],
+    ["Chicken drumstick, roasted",   172,  28.3,   0.0,   5.7],
+    ["Chicken wing, roasted",   203,  30.5,   0.0,   8.1],
+    ["Chicken, rotisserie breast",   153,  28.0,   0.0,   3.9],
+    ["Chicken, rotisserie thigh",   192,  22.0,   0.0,  11.2],
+    ["Ground turkey, 93/7",   170,  22.4,   0.0,   9.3],
+    ["Ground turkey, 85/15",   218,  22.4,   0.0,  14.0],
+    ["Turkey breast, roasted",   135,  30.1,   0.0,   1.0],
+    ["Turkey breast, deli",   104,  17.7,   2.5,   2.5],
+    ["Ground beef, 80/20, cooked",   254,  25.9,   0.0,  17.4],
+    ["Ground beef, 90/10, cooked",   196,  27.7,   0.0,  10.0],
+    ["Ground beef, 93/7, cooked",   174,  28.5,   0.0,   6.8],
+    ["Steak, sirloin, cooked",   207,  30.5,   0.0,   8.9],
+    ["Steak, ribeye, cooked",   291,  24.5,   0.0,  20.8],
+    ["Steak, filet mignon",   227,  30.5,   0.0,  11.5],
+    ["Roast beef, deli",   130,  18.6,   2.0,   5.0],
+    ["Bacon, cooked",   541,  37.0,   1.4,  42.0],
+    ["Ham, deli sliced",   107,  17.1,   1.6,   3.7],
+    ["Pork chop, cooked",   231,  25.5,   0.0,  13.9],
+    ["Pork tenderloin, cooked",   166,  29.9,   0.0,   4.4],
+    ["Sausage, pork, cooked",   325,  17.5,   1.8,  28.0],
+    ["Sausage, Italian, cooked",   304,  19.0,   2.8,  24.0],
+    ["Hot dog, beef",   290,  11.0,   3.8,  26.2],
+    ["Salmon, Atlantic, cooked",   206,  28.8,   0.0,   9.3],
+    ["Salmon, Atlantic, raw",   142,  19.8,   0.0,   6.3],
+    ["Tuna, canned in water",   116,  25.5,   0.0,   0.8],
+    ["Tuna, canned in oil",   198,  29.1,   0.0,   8.2],
+    ["Tuna, fresh, cooked",   184,  30.0,   0.0,   6.3],
+    ["Shrimp, cooked",    99,  24.0,   0.2,   0.3],
+    ["Tilapia, cooked",   128,  26.2,   0.0,   2.7],
+    ["Cod, cooked",   105,  22.8,   0.0,   0.9],
+    ["Halibut, cooked",   140,  27.2,   0.0,   2.9],
+    ["Sardines, canned in oil",   208,  24.6,   0.0,  11.5],
+    ["Milk, whole",    61,   3.2,   4.8,   3.3],
+    ["Milk, 2%",    50,   3.4,   4.8,   2.0],
+    ["Milk, 1%",    42,   3.4,   5.0,   1.0],
+    ["Milk, skim",    34,   3.4,   5.0,   0.1],
+    ["Greek yogurt, 0% plain",    59,  10.0,   3.6,   0.4],
+    ["Greek yogurt, 2% plain",    73,   9.9,   3.8,   1.9],
+    ["Greek yogurt, whole plain",    97,   9.0,   3.8,   5.0],
+    ["Yogurt, plain low-fat",    63,   5.3,   7.0,   1.6],
+    ["Cheddar cheese",   403,  25.0,   1.3,  33.3],
+    ["Mozzarella, part-skim",   280,  28.0,   2.2,  17.1],
+    ["Mozzarella, whole milk",   300,  22.2,   2.2,  22.4],
+    ["Parmesan, grated",   431,  38.5,   4.1,  28.6],
+    ["Swiss cheese",   380,  26.9,   5.4,  27.8],
+    ["American cheese",   371,  16.1,   8.9,  30.6],
+    ["Cream cheese",   342,   6.0,   4.1,  34.0],
+    ["Cottage cheese, 1%",    72,  12.4,   2.7,   1.0],
+    ["Cottage cheese, 2%",    86,  11.1,   3.4,   2.3],
+    ["Butter",   717,   0.9,   0.1,  81.1],
+    ["Sour cream",   198,   2.4,   4.6,  19.4],
+    ["Heavy cream",   340,   2.8,   2.8,  36.1],
+    ["Half and half",   130,   3.0,   4.3,  11.5],
+    ["White rice, cooked",   130,   2.7,  28.2,   0.3],
+    ["Brown rice, cooked",   123,   2.7,  25.6,   1.0],
+    ["Jasmine rice, cooked",   129,   2.7,  28.0,   0.3],
+    ["Oats, dry rolled",   389,  17.0,  66.3,   6.9],
+    ["Oatmeal, cooked",    71,   2.5,  12.0,   1.5],
+    ["Granola",   471,  10.6,  64.0,  20.3],
+    ["Pasta, white, cooked",   158,   5.8,  30.9,   0.9],
+    ["Pasta, whole wheat, cooked",   149,   5.5,  31.1,   0.6],
+    ["White bread",   265,   9.0,  49.4,   3.2],
+    ["Whole wheat bread",   247,  13.0,  43.1,   3.5],
+    ["Sourdough bread",   260,   9.6,  50.0,   1.9],
+    ["Bagel, plain",   271,  10.3,  53.0,   1.7],
+    ["English muffin",   227,   8.0,  44.0,   1.7],
+    ["Tortilla, flour",   312,   8.0,  52.0,   7.6],
+    ["Tortilla, corn",   218,   5.7,  45.9,   2.7],
+    ["Quinoa, cooked",   120,   4.4,  21.3,   1.9],
+    ["Couscous, cooked",   112,   3.8,  23.2,   0.2],
+    ["Crackers, whole wheat",   422,   9.4,  66.8,  14.3],
+    ["Rice cakes, plain",   387,   8.2,  81.6,   3.1],
+    ["Pretzels",   380,   9.5,  80.0,   3.7],
+    ["Corn tortilla chips",   489,   6.5,  63.5,  24.0],
+    ["Potato chips",   536,   7.0,  53.0,  34.6],
+    ["Popcorn, air-popped",   387,  13.0,  77.9,   4.5],
+    ["Potato, baked",    93,   2.5,  21.2,   0.1],
+    ["Potato, boiled",    87,   1.9,  20.1,   0.1],
+    ["Sweet potato, cooked",    90,   2.0,  20.7,   0.1],
+    ["French fries",   312,   3.4,  41.4,  15.0],
+    ["Mashed potatoes",   113,   2.0,  17.0,   4.2],
+    ["Broccoli, raw",    34,   2.8,   6.6,   0.4],
+    ["Broccoli, steamed",    35,   2.4,   7.2,   0.4],
+    ["Spinach, raw",    23,   2.9,   3.6,   0.4],
+    ["Spinach, cooked",    41,   5.4,   6.8,   0.5],
+    ["Kale, raw",    49,   4.3,   8.8,   0.9],
+    ["Lettuce, romaine",    17,   1.2,   3.3,   0.3],
+    ["Lettuce, iceberg",    14,   0.9,   3.0,   0.1],
+    ["Carrot, raw",    41,   0.9,   9.6,   0.2],
+    ["Tomato, raw",    18,   0.9,   3.9,   0.2],
+    ["Cucumber, raw",    15,   0.7,   3.6,   0.1],
+    ["Bell pepper, red",    31,   1.0,   6.0,   0.3],
+    ["Bell pepper, green",    20,   0.9,   4.6,   0.2],
+    ["Onion, raw",    40,   1.1,   9.3,   0.1],
+    ["Garlic, raw",   149,   6.4,  33.1,   0.5],
+    ["Corn, cooked",    96,   3.4,  21.0,   1.5],
+    ["Peas, green, cooked",    84,   5.4,  15.6,   0.2],
+    ["Edamame, cooked",   122,  11.9,   8.9,   5.2],
+    ["Mushrooms, raw",    22,   3.1,   3.3,   0.3],
+    ["Zucchini, raw",    17,   1.2,   3.1,   0.3],
+    ["Celery, raw",    16,   0.7,   3.0,   0.2],
+    ["Cauliflower, raw",    25,   2.0,   5.3,   0.3],
+    ["Asparagus, cooked",    22,   2.4,   4.1,   0.2],
+    ["Green beans, cooked",    35,   1.9,   7.9,   0.1],
+    ["Black beans, cooked",   132,   8.9,  23.7,   0.5],
+    ["Chickpeas, cooked",   164,   8.9,  27.4,   2.6],
+    ["Lentils, cooked",   116,   9.0,  20.1,   0.4],
+    ["Kidney beans, cooked",   127,   8.7,  22.8,   0.5],
+    ["Pinto beans, cooked",   143,   9.0,  26.2,   0.7],
+    ["Tofu, firm",    76,   8.1,   1.9,   4.2],
+    ["Tofu, silken",    55,   4.8,   2.0,   2.7],
+    ["Banana",    89,   1.1,  22.8,   0.3],
+    ["Apple, raw",    52,   0.3,  13.8,   0.2],
+    ["Orange, raw",    47,   0.9,  11.8,   0.1],
+    ["Strawberries, raw",    32,   0.7,   7.7,   0.3],
+    ["Blueberries, raw",    57,   0.7,  14.5,   0.3],
+    ["Raspberries, raw",    52,   1.2,  11.9,   0.7],
+    ["Grapes, raw",    69,   0.7,  18.1,   0.2],
+    ["Watermelon, raw",    30,   0.6,   7.6,   0.2],
+    ["Pineapple, raw",    50,   0.5,  13.1,   0.1],
+    ["Mango, raw",    60,   0.8,  15.0,   0.4],
+    ["Peach, raw",    39,   0.9,   9.5,   0.3],
+    ["Pear, raw",    57,   0.4,  15.2,   0.1],
+    ["Grapefruit, raw",    42,   0.8,  10.7,   0.1],
+    ["Cherries, raw",    63,   1.1,  16.0,   0.2],
+    ["Avocado",   160,   2.0,   8.5,  14.7],
+    ["Almonds",   579,  21.2,  21.7,  49.9],
+    ["Peanuts, dry roasted",   585,  23.7,  21.5,  49.7],
+    ["Peanut butter, smooth",   588,  25.1,  20.1,  50.4],
+    ["Peanut butter, crunchy",   598,  22.2,  22.3,  51.4],
+    ["Walnuts",   654,  15.2,  13.7,  65.2],
+    ["Cashews, dry roasted",   553,  15.3,  32.7,  43.9],
+    ["Pistachios",   567,  20.6,  27.7,  45.8],
+    ["Sunflower seeds",   584,  20.8,  20.0,  51.5],
+    ["Chia seeds",   486,  16.5,  42.1,  30.7],
+    ["Flax seeds",   534,  18.3,  28.9,  42.2],
+    ["Olive oil",   884,   0.0,   0.0, 100.0],
+    ["Coconut oil",   862,   0.0,   0.0, 100.0],
+    ["Vegetable oil",   884,   0.0,   0.0, 100.0],
+    ["Mayonnaise",   680,   1.0,   0.6,  74.9],
+    ["Ketchup",   112,   1.9,  27.8,   0.1],
+    ["Mustard",    66,   4.4,   5.8,   4.0],
+    ["Soy sauce",    53,   5.6,   4.9,   0.6],
+    ["Honey",   304,   0.3,  82.4,   0.0],
+    ["Maple syrup",   260,   0.0,  67.0,   0.1],
+    ["Ranch dressing",   475,   1.3,   7.1,  50.0],
+    ["Vinaigrette dressing",   286,   0.2,   4.6,  30.0],
+    ["Hummus",   166,   7.9,  14.3,   9.6],
+    ["Salsa",    36,   1.6,   7.4,   0.2],
+    ["Guacamole",   150,   2.0,   8.6,  13.2],
+    ["Orange juice",    45,   0.7,  10.4,   0.2],
+    ["Apple juice",    46,   0.1,  11.3,   0.1],
+    ["Coffee, black",     2,   0.3,   0.0,   0.0],
+    ["Coffee, latte, whole milk",    54,   3.0,   5.5,   2.2],
+    ["Tea, unsweetened",     1,   0.0,   0.3,   0.0],
+    ["Soda, cola",    37,   0.0,   9.6,   0.0],
+    ["Almond milk, unsweetened",    15,   0.6,   0.6,   1.2],
+    ["Oat milk",    45,   1.3,   6.7,   1.5],
+    ["Protein powder, whey",   352,  75.0,   9.6,   3.2],
+    ["Protein powder, plant-based",   340,  68.0,  14.0,   4.0],
+    ["Protein bar, average",   360,  20.0,  40.0,  12.0],
+    ["Protein shake, premade",   160,  30.0,   8.0,   2.5],
+    ["Burger, beef, plain",   272,  14.4,  30.6,  11.8],
+    ["Cheeseburger",   303,  15.6,  32.4,  12.6],
+    ["Pizza, cheese",   266,  11.4,  33.6,   9.8],
+    ["Pizza, pepperoni",   298,  12.1,  33.0,  13.2],
+    ["Chicken nuggets",   296,  15.0,  20.0,  18.0],
+    ["Fried chicken, breast",   246,  22.1,  12.2,  12.0],
+    ["Burrito, chicken rice",   163,  10.7,  19.4,   4.2],
+    ["Caesar salad w/ dressing",   158,   4.0,   8.3,  13.0],
+    ["Sushi, salmon roll",   204,   8.0,  30.0,   6.0],
+    ["Dark chocolate, 70%",   598,   7.8,  45.9,  42.6],
+    ["Milk chocolate",   535,   7.7,  59.4,  29.7],
+    ["Ice cream, vanilla",   207,   3.5,  23.6,  11.0],
+    ["Granola bar",   471,   7.6,  64.4,  19.8],
+    ["Jam / jelly",   278,   0.4,  68.9,   0.1],
+    ["Beef, brisket, cooked",   259,  25.9,   0.0,  16.8],
+    ["Beef, chuck roast, cooked",   235,  29.0,   0.0,  12.8],
+    ["Beef, flank steak, cooked",   210,  29.7,   0.0,   9.7],
+    ["Beef, skirt steak, cooked",   218,  27.9,   0.0,  11.2],
+    ["Beef, T-bone steak, cooked",   247,  26.8,   0.0,  15.0],
+    ["Beef, porterhouse steak, cooked",   252,  26.4,   0.0,  15.9],
+    ["Beef, New York strip, cooked",   234,  29.7,   0.0,  12.6],
+    ["Beef, short ribs, cooked",   381,  20.6,   0.0,  32.9],
+    ["Beef, liver, cooked",   175,  27.0,   5.1,   4.9],
+    ["Beef, tongue, cooked",   284,  21.5,   0.0,  21.9],
+    ["Beef, heart, cooked",   175,  28.1,   0.1,   6.0],
+    ["Beef, kidney, cooked",   151,  24.4,   1.0,   4.7],
+    ["Beef, ground, extra lean, cooked",   155,  28.3,   0.0,   4.8],
+    ["Beef jerky",   410,  33.2,  11.1,  25.6],
+    ["Beef, corned, cooked",   251,  18.2,   0.5,  19.0],
+    ["Beef hot dog",   290,  11.0,   3.8,  26.2],
+    ["Beef bologna",   310,  11.3,   4.3,  27.4],
+    ["Beef salami",   389,  18.7,   2.5,  33.3],
+    ["Beef, prime rib, cooked",   330,  23.0,   0.0,  26.0],
+    ["Beef, meatball, cooked",   236,  19.6,   5.5,  14.8],
+    ["Beef, meat loaf",   195,  16.0,  10.0,  10.0],
+    ["Beef, pot pie",   197,   7.4,  17.9,  10.7],
+    ["Beef stew, canned",    72,   5.1,   7.9,   2.0],
+    ["Beef, taco meat, cooked",   205,  20.5,   2.8,  12.6],
+    ["Beef, pastrami",   254,  18.1,   2.6,  18.9],
+    ["Pepperoni",   504,  21.3,   0.8,  44.9],
+    ["Salami, hard",   407,  22.9,   2.1,  34.4],
+    ["Pork belly, cooked",   518,   9.3,   0.0,  53.0],
+    ["Pork ribs, baby back, cooked",   292,  26.0,   0.0,  20.2],
+    ["Pork ribs, spare, cooked",   315,  18.7,   0.0,  26.4],
+    ["Pork shoulder, cooked",   259,  24.0,   0.0,  17.2],
+    ["Pork loin, cooked",   195,  27.9,   0.0,   8.8],
+    ["Pork, ground, cooked",   272,  22.0,   0.0,  20.0],
+    ["Canadian bacon",   185,  19.7,   1.4,  10.9],
+    ["Prosciutto",   267,  25.9,   0.3,  17.6],
+    ["Pancetta, cooked",   457,  22.0,   1.5,  40.2],
+    ["Chorizo, cooked",   455,  24.1,   1.9,  38.3],
+    ["Andouille sausage",   265,  14.3,   2.3,  21.9],
+    ["Bratwurst, cooked",   333,  13.5,   2.8,  29.0],
+    ["Kielbasa, cooked",   325,  14.4,   2.9,  28.3],
+    ["Liverwurst",   307,  14.1,   2.6,  26.7],
+    ["Spam, canned",   309,  13.3,   3.1,  26.4],
+    ["Ham, bone-in, cooked",   163,  21.0,   0.0,   8.4],
+    ["Pork crackling / chicharrones",   544,  61.3,   0.0,  32.5],
+    ["Pork, pulled, BBQ",   200,  19.3,   8.0,   9.2],
+    ["Lamb, leg, cooked",   217,  28.5,   0.0,  11.1],
+    ["Lamb, rack, cooked",   294,  25.0,   0.0,  21.0],
+    ["Lamb, shoulder, cooked",   246,  25.5,   0.0,  15.3],
+    ["Lamb, loin chop, cooked",   260,  28.9,   0.0,  15.5],
+    ["Lamb, ground, cooked",   283,  24.4,   0.0,  20.3],
+    ["Lamb, shank, cooked",   243,  29.4,   0.0,  13.3],
+    ["Veal, loin, cooked",   196,  30.4,   0.0,   7.9],
+    ["Veal, ground, cooked",   172,  25.8,   0.0,   7.0],
+    ["Venison, ground, cooked",   187,  30.2,   0.0,   6.9],
+    ["Venison, roast, cooked",   158,  30.1,   0.0,   3.2],
+    ["Bison, ground, cooked",   218,  29.0,   0.0,  11.4],
+    ["Bison, steak, cooked",   177,  30.3,   0.0,   5.6],
+    ["Duck, roasted, meat only",   201,  23.5,   0.0,  11.2],
+    ["Duck, roasted, with skin",   337,  19.0,   0.0,  28.4],
+    ["Goose, roasted",   305,  25.2,   0.0,  21.9],
+    ["Rabbit, roasted",   197,  29.1,   0.0,   8.0],
+    ["Quail, cooked",   234,  25.1,   0.0,  14.1],
+    ["Elk, roasted",   146,  30.2,   0.0,   2.0],
+    ["Wild boar, cooked",   160,  28.3,   0.0,   4.8],
+    ["Chicken breast, breaded, fried",   256,  21.7,  11.1,  13.2],
+    ["Chicken breast, grilled",   165,  32.0,   0.0,   3.0],
+    ["Chicken breast, poached",   148,  28.8,   0.0,   3.3],
+    ["Chicken breast, smoked",   170,  30.0,   2.0,   4.0],
+    ["Chicken breast, stuffed",   185,  23.0,   3.5,   8.5],
+    ["Chicken livers, cooked",   167,  24.5,   0.9,   6.5],
+    ["Chicken gizzards, cooked",   154,  26.0,   0.4,   4.3],
+    ["Chicken hearts, cooked",   185,  26.0,   0.1,   8.7],
+    ["Chicken, dark meat, roasted",   205,  27.4,   0.0,  10.0],
+    ["Chicken, whole, roasted",   215,  27.3,   0.0,  11.1],
+    ["Chicken salad, prepared",   220,  12.3,   3.8,  17.5],
+    ["Chicken soup, cream of, canned",    69,   1.9,   7.9,   3.3],
+    ["Chicken noodle soup, canned",    33,   2.3,   4.0,   0.9],
+    ["Chicken stir-fry, prepared",   137,  11.5,   7.2,   6.7],
+    ["Chicken tikka masala, prepared",   130,   9.0,   8.0,   6.5],
+    ["Chicken alfredo, prepared",   188,  10.7,  15.2,   9.8],
+    ["Chicken parmesan, prepared",   213,  18.0,  12.0,  10.0],
+    ["Chicken fajita, prepared",   147,  12.0,  10.0,   6.5],
+    ["Chicken pot pie, prepared",   211,   7.3,  20.0,  11.4],
+    ["General Tso's chicken",   205,  14.0,  14.0,  10.0],
+    ["Chicken teriyaki, prepared",   155,  17.0,   8.5,   5.5],
+    ["Buffalo wings, fried",   288,  24.0,   4.0,  19.5],
+    ["Turkey, whole, roasted",   189,  28.6,   0.0,   7.4],
+    ["Turkey, dark meat, roasted",   221,  30.1,   0.0,  11.5],
+    ["Turkey sausage, cooked",   196,  20.4,   2.0,  11.3],
+    ["Turkey salami",   189,  16.3,   2.0,  12.1],
+    ["Turkey pepperoni",   332,  28.6,   2.2,  22.5],
+    ["Turkey, ground, extra lean",   148,  24.7,   0.0,   5.2],
+    ["Turkey hot dog",   190,  11.7,   3.9,  14.1],
+    ["Turkey burger, cooked",   196,  23.5,   0.0,  11.2],
+    ["Turkey bacon, cooked",   218,  27.3,   1.6,  11.1],
+    ["Salmon, sockeye, cooked",   216,  27.3,   0.0,  11.0],
+    ["Salmon, smoked",   117,  18.3,   0.0,   4.3],
+    ["Salmon, pink, canned",   136,  22.0,   0.0,   5.1],
+    ["Tuna, yellowfin, cooked",   139,  30.0,   0.0,   1.1],
+    ["Tuna, bluefin, raw",   144,  23.3,   0.0,   4.9],
+    ["Mahi-mahi, cooked",   109,  23.7,   0.0,   0.9],
+    ["Swordfish, cooked",   155,  25.4,   0.0,   5.1],
+    ["Sea bass, cooked",   124,  23.6,   0.0,   2.6],
+    ["Snapper, cooked",   128,  26.3,   0.0,   1.7],
+    ["Flounder, cooked",   101,  20.8,   0.0,   1.3],
+    ["Sole, cooked",    90,  19.4,   0.0,   1.2],
+    ["Catfish, cooked",   135,  21.5,   0.0,   5.1],
+    ["Perch, cooked",   117,  24.9,   0.0,   1.3],
+    ["Trout, cooked",   190,  26.6,   0.0,   8.5],
+    ["Rainbow trout, cooked",   168,  25.4,   0.0,   6.6],
+    ["Haddock, cooked",   112,  24.2,   0.0,   0.9],
+    ["Pollock, cooked",    92,  19.4,   0.0,   0.9],
+    ["Mackerel, Atlantic, cooked",   262,  23.9,   0.0,  17.8],
+    ["Herring, Atlantic, cooked",   203,  23.0,   0.0,  11.5],
+    ["Anchovies, canned in oil",   210,  29.0,   0.0,   9.7],
+    ["Anchovies, raw",   131,  20.4,   0.0,   4.8],
+    ["Tilapia, raw",    96,  20.1,   0.0,   1.7],
+    ["Grouper, cooked",   118,  24.8,   0.0,   1.3],
+    ["Striped bass, cooked",   124,  22.7,   0.0,   3.0],
+    ["Carp, cooked",   162,  22.9,   0.0,   7.2],
+    ["Eel, cooked",   236,  23.7,   0.0,  15.0],
+    ["Pike, cooked",   113,  24.7,   0.0,   0.9],
+    ["Monkfish, cooked",    97,  18.6,   0.0,   2.0],
+    ["Pangasius, cooked",   105,  16.9,   1.0,   3.6],
+    ["Basa fillet, cooked",   105,  16.9,   1.0,   3.6],
+    ["Tuna salad, prepared",   187,  16.4,   9.0,   9.5],
+    ["Shrimp, raw",    71,  13.6,   0.9,   1.0],
+    ["Lobster, cooked",    98,  20.5,   1.3,   0.6],
+    ["Crab, blue, cooked",    97,  19.4,   0.0,   1.8],
+    ["Crab, Dungeness, cooked",   110,  22.3,   0.9,   1.2],
+    ["Crab, king, cooked",    97,  18.6,   0.0,   1.5],
+    ["Crayfish, cooked",    87,  17.5,   0.0,   1.4],
+    ["Scallops, cooked",   111,  20.5,   5.4,   0.5],
+    ["Scallops, raw",    88,  16.8,   2.4,   0.8],
+    ["Oysters, cooked",   102,  11.2,   6.3,   2.7],
+    ["Oysters, raw",    69,   8.0,   4.2,   2.0],
+    ["Clams, cooked",   148,  25.5,   5.1,   2.0],
+    ["Mussels, cooked",   172,  23.8,   7.4,   4.5],
+    ["Octopus, cooked",   164,  29.8,   4.4,   2.1],
+    ["Squid, cooked",   175,  17.9,   7.8,   7.4],
+    ["Squid, raw",    92,  15.6,   3.1,   1.4],
+    ["Abalone, cooked",   105,  17.1,   6.0,   0.8],
+    ["Eggs, Benedict, prepared",   194,   9.7,   8.9,  13.0],
+    ["Egg, quail, whole",   158,  13.1,   0.4,  11.1],
+    ["Egg, duck, whole",   185,  12.8,   1.4,  13.8],
+    ["Egg, goose, whole",   185,  13.9,   1.4,  13.3],
+    ["Frittata, egg and vegetable",   127,   9.1,   2.5,   8.9],
+    ["Omelet, plain",   154,  10.6,   0.5,  12.0],
+    ["Deviled egg",   196,  11.0,   0.9,  16.6],
+    ["Milk, chocolate, whole",    83,   3.4,  11.4,   3.4],
+    ["Milk, chocolate, reduced fat",    72,   3.4,  11.5,   2.0],
+    ["Milk, condensed, sweetened",   321,   7.9,  54.4,   8.7],
+    ["Milk, evaporated, whole",   134,   6.8,  10.0,   7.6],
+    ["Milk, evaporated, skim",    78,   7.6,  11.3,   0.2],
+    ["Milk, goat, whole",    69,   3.6,   4.5,   4.1],
+    ["Milk, sheep, whole",   108,   5.9,   4.8,   7.0],
+    ["Buttermilk, low fat",    40,   3.3,   4.8,   0.9],
+    ["Kefir, plain, low fat",    41,   3.5,   4.5,   0.9],
+    ["Kefir, plain, whole milk",    61,   3.3,   4.5,   3.5],
+    ["Whipped cream",   257,   2.1,   7.1,  22.2],
+    ["Crème fraîche",   362,   2.4,   2.9,  37.7],
+    ["Mascarpone",   429,   4.4,   4.4,  43.5],
+    ["Ricotta, part-skim",   138,  10.0,   5.1,   7.9],
+    ["Ricotta, whole milk",   174,   9.7,   4.5,  12.5],
+    ["Brie cheese",   334,  20.8,   0.5,  27.7],
+    ["Camembert cheese",   300,  19.8,   0.5,  24.3],
+    ["Feta cheese",   264,  14.2,   4.1,  21.3],
+    ["Goat cheese, soft",   268,  18.5,   2.0,  21.1],
+    ["Gouda cheese",   356,  24.9,   2.2,  27.4],
+    ["Gruyere cheese",   413,  29.8,   0.4,  32.3],
+    ["Havarti cheese",   371,  21.8,   2.0,  30.6],
+    ["Manchego cheese",   395,  26.0,   0.0,  32.0],
+    ["Muenster cheese",   368,  23.4,   1.1,  30.0],
+    ["Pepper jack cheese",   373,  22.4,   1.8,  30.5],
+    ["Provolone cheese",   352,  25.6,   2.1,  26.6],
+    ["Romano cheese",   387,  31.8,   3.6,  26.9],
+    ["Colby cheese",   394,  23.8,   2.6,  32.1],
+    ["Monterey Jack cheese",   373,  24.5,   0.7,  30.3],
+    ["Limburger cheese",   327,  20.1,   0.5,  27.3],
+    ["Blue cheese",   353,  21.4,   2.3,  28.7],
+    ["Gorgonzola cheese",   358,  22.0,   2.3,  29.4],
+    ["Velveeta processed cheese",   320,  16.4,  10.0,  22.4],
+    ["Cheese sauce",   196,   5.4,   8.5,  15.7],
+    ["Soy milk, unsweetened",    33,   2.9,   1.8,   1.8],
+    ["Rice milk",    47,   0.3,   9.2,   1.0],
+    ["Coconut milk, canned",   197,   2.0,   6.0,  21.3],
+    ["Coconut milk, beverage",    22,   0.2,   3.4,   0.9],
+    ["Lactose-free milk, whole",    61,   3.2,   4.9,   3.3],
+    ["Ice cream, chocolate",   216,   3.8,  26.0,  11.0],
+    ["Ice cream, strawberry",   192,   3.2,  24.5,   9.4],
+    ["Ice cream, cookies and cream",   253,   4.0,  29.5,  13.5],
+    ["Gelato, vanilla",   190,   4.3,  23.0,   8.8],
+    ["Frozen yogurt, vanilla",   127,   3.6,  22.3,   2.9],
+    ["Sherbet, orange",   144,   1.1,  32.0,   1.9],
+    ["Sorbet, fruit",   121,   0.4,  31.2,   0.1],
+    ["Pudding, chocolate, prepared",    99,   2.7,  15.6,   3.2],
+    ["Pudding, vanilla, prepared",    98,   2.7,  15.5,   3.1],
+    ["Custard, prepared",   122,   4.5,  14.6,   5.4],
+    ["Panna cotta",   201,   3.5,  17.0,  13.5],
+    ["Basmati rice, cooked",   130,   2.7,  28.2,   0.3],
+    ["Wild rice, cooked",   101,   4.0,  21.3,   0.3],
+    ["Arborio rice, cooked",   130,   2.4,  28.4,   0.3],
+    ["Black rice, cooked",   160,   4.0,  32.0,   1.5],
+    ["Red rice, cooked",   110,   2.5,  23.0,   1.0],
+    ["Sticky rice, cooked",   130,   2.4,  28.6,   0.2],
+    ["Fried rice, with egg",   163,   4.3,  23.0,   6.2],
+    ["Rice pilaf, cooked",   150,   3.0,  24.0,   4.5],
+    ["Risotto, prepared",   153,   4.6,  20.0,   5.7],
+    ["Paella, prepared",   196,  10.8,  22.0,   7.0],
+    ["Buckwheat, cooked",    92,   3.4,  19.9,   0.6],
+    ["Bulgur, cooked",    83,   3.1,  18.6,   0.2],
+    ["Millet, cooked",   119,   3.5,  23.7,   1.0],
+    ["Sorghum, cooked",   329,  10.6,  72.1,   3.5],
+    ["Amaranth, cooked",   102,   3.8,  18.7,   1.6],
+    ["Barley, cooked",   123,   2.3,  28.2,   0.4],
+    ["Farro, cooked",   150,   5.0,  30.0,   1.0],
+    ["Spelt, cooked",   127,   5.5,  26.0,   0.9],
+    ["Teff, cooked",   101,   3.9,  20.0,   0.7],
+    ["Rye, cooked",   129,   4.6,  28.4,   0.7],
+    ["Kamut, cooked",   147,   6.6,  28.9,   0.9],
+    ["Polenta, cooked",    70,   1.5,  15.6,   0.3],
+    ["Corn grits, cooked",    71,   1.6,  15.6,   0.4],
+    ["Cream of wheat, cooked",    65,   1.9,  13.8,   0.2],
+    ["Semolina, cooked",    60,   2.1,  12.1,   0.3],
+    ["Bran flakes cereal",   303,  10.7,  73.0,   1.5],
+    ["Corn flakes cereal",   357,   7.5,  84.1,   0.4],
+    ["Frosted flakes cereal",   379,   3.9,  89.6,   0.5],
+    ["Cheerios cereal",   375,  13.1,  71.9,   6.7],
+    ["Honey Nut Cheerios",   383,   9.5,  83.3,   3.3],
+    ["Special K cereal",   379,  24.5,  72.7,   1.6],
+    ["Raisin Bran cereal",   298,   9.3,  74.3,   1.9],
+    ["Muesli",   349,   9.6,  65.5,   6.0],
+    ["Granola, low fat",   388,  10.9,  74.7,   5.9],
+    ["Oat bran, cooked",    40,   3.2,   7.0,   0.9],
+    ["Wheat bran",   216,  15.6,  64.5,   4.3],
+    ["Wheat germ",   382,  26.6,  51.8,   9.7],
+    ["Corn bran",   224,   6.0,  83.9,   1.3],
+    ["Rye bread",   259,   8.5,  48.3,   3.3],
+    ["Pumpernickel bread",   250,   8.6,  48.0,   2.9],
+    ["Multigrain bread",   265,  11.0,  45.9,   4.2],
+    ["Oat bread",   262,  10.2,  47.8,   3.7],
+    ["Italian bread",   271,   9.1,  50.4,   3.5],
+    ["French bread / baguette",   274,   9.0,  54.3,   2.4],
+    ["Brioche",   381,  10.0,  43.8,  18.0],
+    ["Focaccia",   281,   7.8,  43.2,   8.9],
+    ["Naan bread",   317,   9.4,  56.5,   5.3],
+    ["Pita bread, white",   275,   9.1,  55.7,   1.2],
+    ["Pita bread, whole wheat",   265,  10.0,  52.9,   1.6],
+    ["Flatbread",   286,   9.0,  54.0,   4.1],
+    ["Challah bread",   306,  10.0,  50.8,   7.5],
+    ["Ciabatta",   272,   9.5,  53.6,   1.5],
+    ["Croissant, plain",   406,   8.2,  45.8,  21.0],
+    ["Croissant, butter",   406,   8.2,  45.8,  21.0],
+    ["Danish pastry",   374,   5.9,  46.8,  18.9],
+    ["Doughnut, glazed",   452,   5.4,  51.4,  25.0],
+    ["Doughnut, cake",   417,   5.1,  51.1,  22.2],
+    ["Muffin, blueberry",   377,   5.6,  57.0,  14.8],
+    ["Muffin, bran",   298,   6.4,  53.8,   7.2],
+    ["Muffin, corn",   369,   6.0,  56.4,  13.1],
+    ["Muffin, chocolate chip",   443,   6.0,  61.2,  19.4],
+    ["Biscuit, plain",   362,   7.0,  44.6,  17.5],
+    ["Biscuit, buttermilk",   335,   7.1,  43.3,  14.9],
+    ["Scone, plain",   380,   7.2,  54.3,  15.1],
+    ["Waffle, plain",   291,   8.3,  37.5,  12.0],
+    ["Pancake, plain",   227,   6.4,  35.8,   6.3],
+    ["French toast",   229,   9.0,  26.0,  10.0],
+    ["Crêpe, plain",   173,   5.3,  24.9,   5.9],
+    ["Corn muffin",   370,   6.0,  57.0,  12.6],
+    ["Bread roll, white",   285,   9.0,  55.0,   3.2],
+    ["Bread roll, whole wheat",   274,  11.0,  50.0,   4.0],
+    ["Hot dog bun",   279,   9.0,  50.2,   4.6],
+    ["Hamburger bun",   279,   9.0,  50.2,   4.6],
+    ["Puff pastry, baked",   558,   7.4,  44.6,  39.7],
+    ["Phyllo / filo dough",   288,   8.0,  58.0,   2.5],
+    ["Breadcrumbs, dry",   395,  13.5,  73.2,   5.3],
+    ["Matzo",   395,  11.3,  82.3,   1.3],
+    ["Crispbread, rye",   338,  10.8,  70.6,   1.1],
+    ["Graham crackers",   429,   6.0,  74.0,  10.6],
+    ["Saltine crackers",   428,  10.0,  71.4,  10.0],
+    ["Animal crackers",   447,   7.8,  74.1,  13.5],
+    ["Oreo cookies",   480,   5.0,  71.0,  20.0],
+    ["Chocolate chip cookies",   502,   5.6,  62.2,  26.3],
+    ["Ginger snap cookies",   429,   5.3,  79.4,   9.4],
+    ["Oatmeal raisin cookies",   480,   6.5,  67.0,  21.0],
+    ["Sugar cookies",   487,   5.3,  64.6,  23.2],
+    ["Shortbread cookies",   524,   6.2,  63.5,  27.0],
+    ["Peanut butter cookies",   514,  11.9,  58.3,  27.6],
+    ["Brownies",   406,   5.0,  65.5,  16.5],
+    ["Blondies",   462,   5.6,  59.7,  23.0],
+    ["Rice Krispy treats",   414,   4.3,  82.0,   7.7],
+    ["Spaghetti, cooked",   158,   5.8,  30.9,   0.9],
+    ["Fettuccine, cooked",   158,   5.8,  30.9,   0.9],
+    ["Penne, cooked",   158,   5.8,  30.9,   0.9],
+    ["Rigatoni, cooked",   160,   5.8,  31.3,   0.9],
+    ["Lasagna noodles, cooked",   155,   5.7,  30.9,   0.7],
+    ["Linguine, cooked",   158,   5.8,  30.9,   0.9],
+    ["Angel hair pasta, cooked",   158,   5.8,  30.9,   0.9],
+    ["Rotini, cooked",   159,   5.8,  31.2,   0.9],
+    ["Orzo, cooked",   158,   5.8,  30.9,   0.9],
+    ["Gnocchi, cooked",   159,   4.5,  32.0,   1.0],
+    ["Ravioli, cheese, cooked",   197,   9.0,  26.4,   6.2],
+    ["Tortellini, cheese, cooked",   225,  10.0,  30.6,   7.0],
+    ["Egg noodles, cooked",   138,   4.5,  25.2,   2.2],
+    ["Udon noodles, cooked",   135,   2.7,  28.0,   0.6],
+    ["Soba noodles, cooked",   103,   5.1,  21.4,   0.1],
+    ["Ramen noodles, cooked",   138,   5.0,  25.7,   2.3],
+    ["Rice noodles, cooked",   108,   0.9,  25.2,   0.2],
+    ["Glass noodles, cooked",    81,   0.1,  19.7,   0.1],
+    ["Lo mein, prepared",   136,   5.8,  18.0,   4.3],
+    ["Pad Thai, prepared",   183,   8.2,  24.0,   6.5],
+    ["Macaroni, cooked",   158,   5.8,  30.9,   0.9],
+    ["Mac and cheese, prepared",   189,   6.5,  22.4,   8.1],
+    ["Spaghetti Bolognese, prepared",   150,   9.0,  14.0,   6.0],
+    ["Pasta with marinara, prepared",   136,   4.5,  22.0,   3.5],
+    ["Pasta with pesto, prepared",   222,   6.5,  21.0,  12.5],
+    ["Lasagna, prepared",   166,   9.8,  15.3,   6.9],
+    ["Pasta carbonara, prepared",   251,  10.6,  21.6,  13.5],
+    ["Pizza, margherita",   242,  10.4,  30.7,   8.7],
+    ["Pizza, Hawaiian",   275,  12.5,  33.4,  10.2],
+    ["Pizza, meat lovers",   325,  14.5,  30.2,  16.1],
+    ["Pizza, veggie",   250,  10.7,  33.1,   8.3],
+    ["Pizza, white / bianca",   268,  10.1,  30.0,  11.9],
+    ["Pizza, thin crust, cheese",   251,  11.8,  27.8,  10.0],
+    ["Pizza, thick crust, cheese",   278,  11.7,  38.0,   8.5],
+    ["Pizza, stuffed crust",   297,  13.0,  33.5,  12.5],
+    ["Calzone, cheese",   229,  10.0,  27.3,   8.8],
+    ["Stromboli, prepared",   286,  14.0,  26.0,  13.0],
+    ["Sandwich, turkey club",   241,  15.5,  21.6,  10.0],
+    ["Sandwich, BLT",   308,  12.5,  26.3,  17.0],
+    ["Sandwich, ham and cheese",   253,  14.8,  23.6,  10.2],
+    ["Sandwich, grilled cheese",   338,  13.5,  26.5,  20.5],
+    ["Sandwich, tuna salad",   257,  15.3,  21.9,  11.4],
+    ["Sandwich, egg salad",   255,  11.5,  23.9,  12.4],
+    ["Sandwich, PB&J",   343,  12.5,  43.6,  15.0],
+    ["Sandwich, Reuben",   320,  16.0,  25.0,  16.5],
+    ["Sandwich, veggie",   213,   8.6,  29.3,   8.3],
+    ["Wrap, chicken Caesar",   207,  12.5,  21.1,   8.0],
+    ["Wrap, burrito, bean cheese",   219,   9.0,  30.0,   7.0],
+    ["Wrap, turkey",   196,  12.4,  22.0,   6.4],
+    ["Subway, 6\" turkey breast",   131,  10.3,  18.5,   2.0],
+    ["Panini, mozzarella tomato",   252,  12.0,  26.0,  10.5],
+    ["Gyro, lamb",   265,  14.0,  22.0,  13.0],
+    ["Shawarma, chicken",   194,  16.0,  14.5,   7.5],
+    ["Falafel",   333,  13.3,  31.8,  17.7],
+    ["Hot dog, with bun",   269,  10.3,  23.5,  14.6],
+    ["Corn dog",   261,   9.5,  24.1,  14.2],
+    ["Slider, beef mini burger",   254,  12.0,  23.0,  12.0],
+    ["Tomato soup, canned, prepared",    50,   1.2,  11.0,   0.8],
+    ["Chicken noodle soup, prepared",    33,   2.3,   4.0,   0.9],
+    ["Minestrone soup, canned",    44,   2.3,   6.8,   0.9],
+    ["Lentil soup, canned",    71,   4.1,   9.5,   1.9],
+    ["Split pea soup, canned",   100,   4.1,  16.5,   2.3],
+    ["Clam chowder, New England",    76,   2.8,   8.9,   3.2],
+    ["French onion soup, prepared",    50,   2.8,   6.5,   1.0],
+    ["Beef barley soup, canned",    51,   3.5,   7.2,   1.0],
+    ["Black bean soup, canned",    80,   4.7,  13.0,   1.3],
+    ["Gazpacho",    28,   1.0,   4.3,   0.9],
+    ["Miso soup, prepared",    19,   1.5,   2.2,   0.5],
+    ["Pho, beef, prepared",   104,   8.5,  13.0,   2.0],
+    ["Ramen, prepared",   152,   8.0,  18.5,   5.0],
+    ["Tom yum soup, prepared",    37,   2.5,   4.0,   1.0],
+    ["Chili con carne, prepared",   137,   7.5,  11.2,   6.5],
+    ["Chili, vegetarian, canned",    89,   4.7,  14.0,   1.5],
+    ["Beef chili, canned",   105,   6.9,  12.0,   3.3],
+    ["Pozole, prepared",    80,   7.0,  10.0,   1.5],
+    ["Bisque, lobster",    93,   4.5,   7.0,   5.5],
+    ["Beef stew, prepared",    82,   6.2,   7.0,   3.1],
+    ["Chicken tortilla soup",    66,   5.0,   7.0,   2.0],
+    ["Garden salad, no dressing",    17,   1.1,   3.4,   0.2],
+    ["Greek salad",   107,   3.4,   6.1,   8.3],
+    ["Cobb salad, no dressing",   184,  15.0,   5.5,  11.5],
+    ["Nicoise salad, no dressing",   151,  12.0,   9.5,   6.5],
+    ["Waldorf salad",   134,   1.5,  12.0,  10.0],
+    ["Coleslaw, creamy",   151,   1.3,  14.0,  10.5],
+    ["Coleslaw, vinegar",    87,   0.8,  12.0,   4.2],
+    ["Pasta salad, prepared",   200,   5.0,  23.0,   9.5],
+    ["Potato salad, prepared",   179,   2.5,  19.5,   9.7],
+    ["Tabbouleh",   143,   3.3,  16.4,   8.0],
+    ["Caprese salad",   162,   9.0,   4.0,  12.5],
+    ["Quinoa bowl, prepared",   176,   7.0,  23.5,   6.0],
+    ["Buddha bowl, prepared",   187,   8.0,  24.0,   7.0],
+    ["Grain bowl, prepared",   210,   8.5,  28.0,   7.5],
+    ["Poke bowl, prepared",   193,  14.0,  22.0,   5.5],
+    ["Acai bowl, prepared",   162,   3.1,  32.5,   4.3],
+    ["Smoothie bowl, mixed fruit",   108,   2.5,  22.0,   2.0],
+    ["Taco, beef, hard shell",   220,  11.5,  15.0,  12.5],
+    ["Taco, chicken, soft",   208,  13.5,  17.0,   8.5],
+    ["Taco, fish, prepared",   204,   9.0,  21.0,   8.8],
+    ["Enchilada, chicken",   168,   9.5,  17.5,   6.2],
+    ["Enchilada, beef",   193,  11.0,  16.5,   8.7],
+    ["Quesadilla, cheese",   340,  14.5,  27.5,  19.0],
+    ["Quesadilla, chicken",   283,  17.0,  23.0,  13.0],
+    ["Nachos, with cheese",   346,  12.5,  37.5,  17.0],
+    ["Tamale, prepared",   195,   5.8,  18.9,   9.7],
+    ["Chile relleno",   186,  10.0,  12.0,  11.0],
+    ["Refried beans, canned",   105,   6.0,  16.0,   1.6],
+    ["Mexican rice, prepared",   163,   3.2,  28.0,   4.3],
+    ["Salsa verde",    34,   1.0,   6.9,   0.9],
+    ["Pico de gallo",    25,   1.1,   4.6,   0.5],
+    ["Corn on the cob, cooked",    99,   3.3,  22.1,   1.5],
+    ["Fried rice, shrimp",   183,   7.5,  26.0,   5.5],
+    ["Fried rice, vegetable",   164,   3.9,  26.0,   5.3],
+    ["Chow mein, chicken",   133,   8.5,  14.5,   4.8],
+    ["Spring roll, fried",   201,   5.0,  22.0,  10.0],
+    ["Egg roll, fried",   207,   5.3,  24.0,  10.0],
+    ["Dumplings, pork steamed",   177,   9.0,  20.0,   6.0],
+    ["Dumplings, pan-fried",   193,  10.0,  20.0,   7.5],
+    ["Wonton soup",    48,   3.1,   6.7,   1.0],
+    ["Miso ramen, prepared",   144,   7.5,  18.5,   4.5],
+    ["Tonkotsu ramen, prepared",   172,   8.5,  18.5,   7.0],
+    ["Sushi, California roll",   186,   7.8,  29.8,   4.2],
+    ["Sushi, tuna roll",   184,   9.0,  30.0,   2.0],
+    ["Sushi, cucumber roll",   133,   3.5,  29.0,   0.3],
+    ["Sashimi, salmon, 3 pc",   104,  13.0,   0.0,   5.5],
+    ["Sashimi, tuna, 3 pc",   104,  17.0,   0.0,   3.5],
+    ["Nigiri, salmon",   180,   8.5,  25.0,   4.5],
+    ["Tempura, shrimp",   257,   8.7,  28.9,  12.5],
+    ["Teriyaki chicken, prepared",   155,  17.0,   8.5,   5.5],
+    ["Beef bulgogi, prepared",   176,  17.0,   8.0,   8.0],
+    ["Bibimbap, prepared",   181,  10.5,  23.0,   5.5],
+    ["Korean fried chicken",   318,  21.0,  15.0,  20.0],
+    ["Pad Thai, shrimp",   196,  10.0,  25.5,   5.5],
+    ["Green curry, chicken",   165,  12.0,   6.0,  10.5],
+    ["Red curry, beef",   155,  11.0,   5.5,  10.0],
+    ["Massaman curry",   179,  11.0,   8.0,  11.0],
+    ["Tom kha gai",    97,   6.0,   5.0,   6.5],
+    ["Satay, chicken with peanut sauce",   210,  17.0,   5.0,  13.5],
+    ["Nasi goreng",   184,   7.0,  24.5,   6.5],
+    ["Mie goreng",   231,   9.0,  33.5,   6.5],
+    ["Banh mi, chicken",   224,  14.5,  27.5,   6.5],
+    ["Vietnamese pho, chicken",    89,   8.5,  11.0,   1.0],
+    ["Congee / rice porridge",    72,   2.5,  15.5,   0.5],
+    ["Dim sum, har gow",    74,   5.5,   8.0,   2.0],
+    ["Dim sum, siu mai",   106,   7.0,  10.0,   4.0],
+    ["Mapo tofu, prepared",   136,   9.0,   7.0,   8.5],
+    ["Kung pao chicken",   173,  13.5,   7.5,   9.5],
+    ["Beef and broccoli",   107,   9.0,   5.5,   5.5],
+    ["Dal / lentil soup",   124,   8.0,  17.5,   2.5],
+    ["Saag paneer",   176,   8.5,   7.5,  12.5],
+    ["Butter chicken / murgh makhani",   147,  11.5,   6.5,   8.0],
+    ["Chicken biryani",   152,   9.0,  19.0,   4.5],
+    ["Lamb biryani",   161,   9.5,  18.5,   5.5],
+    ["Palak paneer",   165,   7.5,   8.5,  11.0],
+    ["Chana masala",   127,   5.5,  15.0,   5.5],
+    ["Aloo gobi, prepared",    77,   2.5,  11.0,   3.0],
+    ["Samosa, fried",   275,   5.5,  32.5,  13.5],
+    ["Naan bread, garlic",   334,   9.6,  57.5,   6.5],
+    ["Raita",    46,   2.5,   5.0,   1.5],
+    ["Mango lassi",    81,   2.8,  15.0,   1.3],
+    ["Tandoori chicken",   170,  25.0,   3.5,   6.0],
+    ["Paneer, fresh",   265,  18.3,   3.4,  20.0],
+    ["Chapati / roti",   297,   9.5,  55.3,   3.9],
+    ["Paratha, plain",   327,   8.5,  49.8,  11.3],
+    ["Khichdi",   155,   5.5,  27.0,   3.0],
+    ["Moussaka, prepared",   140,   8.5,   8.0,   8.5],
+    ["Spanakopita",   250,   8.0,  22.0,  14.5],
+    ["Dolmades / stuffed grape leaves",   114,   3.5,  14.5,   5.0],
+    ["Shawarma, beef",   207,  16.0,  14.5,   8.5],
+    ["Kebab, lamb",   227,  20.0,   3.5,  15.0],
+    ["Kebab, chicken",   189,  22.0,   4.0,   9.0],
+    ["Baba ganoush",    91,   2.3,   8.7,   5.8],
+    ["Tzatziki",    67,   4.0,   3.5,   4.3],
+    ["Pita chips",   407,  11.0,  58.0,  14.0],
+    ["Tapenade, olive",   302,   2.5,   4.5,  31.5],
+    ["Fattoush salad",    91,   2.0,  10.0,   4.5],
+    ["Tiramisu",   285,   5.0,  25.5,  17.8],
+    ["Cannoli, filled",   346,   6.5,  35.0,  20.5],
+    ["Bruschetta, prepared",   159,   4.5,  22.5,   5.5],
+    ["Risotto, mushroom",   169,   4.6,  24.0,   6.0],
+    ["Osso buco",   223,  21.0,   5.0,  12.5],
+    ["Carbonara sauce",   347,  13.5,   4.0,  30.5],
+    ["Arrabiata sauce",    50,   1.5,   7.5,   1.8],
+    ["Puttanesca sauce",    52,   1.5,   6.5,   2.5],
+    ["Polpette / Italian meatballs",   237,  19.6,   5.5,  14.8],
+    ["Gnocchi, potato, cooked",   159,   4.5,  32.0,   1.0],
+    ["Mac and cheese, homemade",   238,   9.5,  22.5,  12.0],
+    ["Mac and cheese, boxed, prepared",   169,   5.5,  23.5,   6.5],
+    ["Baked beans, canned",   155,   7.0,  27.0,   1.7],
+    ["Collard greens, cooked",    39,   3.0,   7.3,   0.6],
+    ["Grits, cooked",    70,   1.5,  15.2,   0.5],
+    ["Hush puppies, fried",   329,   6.5,  41.0,  16.0],
+    ["Chicken fried steak",   312,  17.0,  21.0,  18.0],
+    ["Chicken and waffles",   312,  17.0,  28.0,  14.0],
+    ["Pulled pork sandwich",   220,  15.0,  22.0,   7.5],
+    ["BBQ brisket",   273,  25.0,   8.5,  15.0],
+    ["Ribs, BBQ, pork",   336,  19.7,   6.5,  25.5],
+    ["Coleslaw, BBQ style",   152,   1.3,  14.0,  10.5],
+    ["Cornbread",   332,   6.6,  46.3,  14.1],
+    ["Biscuits and gravy",   231,   6.5,  21.5,  13.5],
+    ["Country-fried chicken",   280,  22.0,  12.5,  15.5],
+    ["Green bean casserole",   126,   2.7,  10.5,   8.4],
+    ["Sweet potato casserole",   183,   2.5,  32.5,   5.8],
+    ["Shepherd's pie",   113,   7.5,   9.5,   4.5],
+    ["Pot roast, prepared",   196,  22.0,   5.5,   9.5],
+    ["Beef stroganoff",   164,  11.5,   9.5,   8.5],
+    ["Stuffed peppers, beef rice",   151,  10.0,  14.5,   5.5],
+    ["Sloppy joe, prepared",   153,   9.0,  16.0,   5.5],
+    ["Breakfast burrito, egg cheese",   215,  10.5,  21.5,   9.0],
+    ["Breakfast sandwich, McMuffin-style",   263,  14.0,  22.0,  12.5],
+    ["Bacon, egg, and cheese bagel",   362,  19.5,  34.0,  15.0],
+    ["Denver omelet",   193,  14.0,   3.5,  13.5],
+    ["Eggs Benedict",   263,  12.5,  12.5,  18.0],
+    ["Quiche, Lorraine",   279,  10.0,  16.0,  19.5],
+    ["Belgian waffle, plain",   360,   9.6,  50.0,  13.0],
+    ["French toast, with syrup",   273,   8.5,  38.0,   8.5],
+    ["Acai berry, frozen puree",    60,   1.5,   6.0,   3.5],
+    ["Granola with milk",   184,   5.5,  29.0,   5.0],
+    ["Overnight oats, plain",    96,   3.8,  15.5,   2.5],
+    ["Chia pudding",   155,   5.0,  14.0,   8.5],
+    ["Avocado toast, plain",   190,   4.5,  20.5,   9.5],
+    ["Smoked salmon on bagel",   260,  14.5,  28.5,   9.5],
+    ["Hash browns, fried",   265,   2.5,  31.5,  14.5],
+    ["Breakfast sausage link, pork",   250,  14.0,   1.5,  21.0],
+    ["Turkey sausage link",   155,  15.0,   2.5,   9.5],
+    ["Big Mac, McDonald's",   257,  12.5,  22.5,  12.5],
+    ["Whopper, Burger King",   272,  13.5,  22.0,  14.0],
+    ["Quarter Pounder w/ Cheese",   296,  18.0,  21.5,  15.0],
+    ["Double Cheeseburger",   344,  21.0,  22.5,  18.5],
+    ["Veggie burger, cooked",   176,  16.0,  17.0,   4.5],
+    ["Salmon burger, cooked",   195,  20.0,   7.0,   8.5],
+    ["Portobello mushroom burger",   128,   4.5,  11.5,   7.0],
+    ["McFlurry, Oreo",   195,   4.5,  31.5,   6.5],
+    ["McDonald's fries, medium",   293,   3.5,  38.5,  14.0],
+    ["Onion rings, fast food",   316,   4.5,  38.0,  16.5],
+    ["Tater tots",   197,   2.5,  25.0,   9.5],
+    ["Mozzarella sticks, fried",   340,  17.0,  26.5,  18.5],
+    ["Jalapeño poppers, fried",   309,  10.0,  26.0,  19.5],
+    ["Loaded potato skins",   295,   9.5,  23.0,  18.0],
+    ["Tomato sauce, marinara",    81,   2.0,  11.7,   3.1],
+    ["Tomato sauce, canned",    32,   1.3,   6.6,   0.2],
+    ["Pasta sauce, store-bought",    76,   1.5,   9.5,   3.5],
+    ["Alfredo sauce",   235,   4.5,   3.5,  23.0],
+    ["Pesto, basil",   449,   9.0,   7.5,  43.5],
+    ["Béarnaise sauce",   268,   2.0,   1.0,  28.5],
+    ["Hollandaise sauce",   302,   3.5,   1.5,  31.5],
+    ["Worcestershire sauce",    78,   1.0,  19.0,   0.1],
+    ["Hot sauce, Tabasco",    12,   0.5,   1.4,   0.5],
+    ["Sriracha",   101,   2.0,  20.0,   2.3],
+    ["Hoisin sauce",   220,   4.0,  42.0,   4.0],
+    ["Oyster sauce",   117,   2.5,  24.5,   0.5],
+    ["Fish sauce",    35,   5.1,   3.6,   0.0],
+    ["Teriyaki sauce",   105,   2.0,  21.0,   1.5],
+    ["Sweet and sour sauce",   118,   0.5,  29.0,   0.2],
+    ["Duck sauce",   240,   0.5,  60.0,   0.0],
+    ["Plum sauce",   247,   0.5,  61.5,   0.5],
+    ["Tahini",   595,  17.0,  21.2,  53.8],
+    ["Miso paste",   199,  11.7,  26.5,   6.0],
+    ["Gochujang",   145,   4.0,  31.0,   1.5],
+    ["Curry paste, red",   215,   6.0,  22.5,  11.5],
+    ["Curry paste, green",   220,   6.5,  21.5,  12.0],
+    ["Chimichurri",   311,   1.5,   5.5,  32.0],
+    ["Harissa paste",   173,   3.5,  11.5,  12.5],
+    ["Remoulade sauce",   394,   1.5,   5.0,  40.5],
+    ["Thousand island dressing",   410,   1.5,  15.0,  39.0],
+    ["Blue cheese dressing",   483,   4.5,   5.0,  50.0],
+    ["Italian dressing",   225,   0.5,   5.5,  23.0],
+    ["French dressing",   293,   0.5,  16.0,  26.0],
+    ["Caesar dressing",   422,   2.5,   4.0,  44.0],
+    ["Honey mustard dressing",   256,   0.5,  29.5,  15.5],
+    ["Sesame ginger dressing",   218,   1.5,  18.5,  15.0],
+    ["Avocado dressing",   178,   1.5,   5.5,  17.0],
+    ["Balsamic vinaigrette",   238,   0.5,   9.0,  22.0],
+    ["Apple cider vinegar",    22,   0.0,   0.9,   0.0],
+    ["Balsamic vinegar",    88,   0.5,  17.0,   0.0],
+    ["Sriracha mayo",   381,   2.0,   4.5,  39.5],
+    ["Artichoke, cooked",    53,   3.5,  11.9,   0.2],
+    ["Artichoke hearts, canned",    35,   2.5,   7.0,   0.2],
+    ["Arugula, raw",    25,   2.6,   3.7,   0.7],
+    ["Bamboo shoots, cooked",    18,   2.0,   2.5,   0.2],
+    ["Beet, cooked",    44,   1.7,  10.0,   0.2],
+    ["Beet, raw",    43,   1.6,   9.6,   0.2],
+    ["Bok choy, cooked",    16,   2.0,   2.3,   0.2],
+    ["Brussels sprouts, cooked",    36,   3.0,   6.8,   0.5],
+    ["Cabbage, green, raw",    25,   1.3,   5.8,   0.1],
+    ["Cabbage, red, raw",    31,   1.4,   7.4,   0.2],
+    ["Cabbage, cooked",    23,   1.1,   5.0,   0.1],
+    ["Collard greens, raw",    32,   3.0,   5.7,   0.6],
+    ["Eggplant, cooked",    35,   0.8,   8.7,   0.2],
+    ["Fennel, raw",    31,   1.2,   7.3,   0.2],
+    ["Jicama, raw",    38,   0.7,   8.8,   0.1],
+    ["Kohlrabi, raw",    27,   1.7,   6.2,   0.1],
+    ["Leek, cooked",    31,   0.8,   7.6,   0.2],
+    ["Lotus root, cooked",    66,   1.6,  16.0,   0.1],
+    ["Okra, cooked",    33,   1.9,   7.5,   0.2],
+    ["Parsnip, cooked",    71,   1.2,  17.0,   0.3],
+    ["Plantain, cooked",   122,   0.8,  31.9,   0.2],
+    ["Plantain, raw",   122,   1.3,  31.9,   0.4],
+    ["Radish, raw",    16,   0.7,   3.4,   0.1],
+    ["Rutabaga, cooked",    39,   1.2,   8.7,   0.2],
+    ["Shallot, raw",    72,   2.5,  16.8,   0.1],
+    ["Snow peas, raw",    42,   2.8,   7.6,   0.2],
+    ["Sorrel, raw",    22,   2.0,   3.2,   0.7],
+    ["Swiss chard, cooked",    20,   1.9,   4.1,   0.1],
+    ["Taro, cooked",   112,   0.5,  27.6,   0.2],
+    ["Turnip, cooked",    22,   0.7,   4.8,   0.1],
+    ["Water chestnuts, canned",    36,   0.6,   8.7,   0.0],
+    ["Watercress, raw",    11,   2.3,   1.3,   0.1],
+    ["Yam, cooked",   118,   1.5,  27.9,   0.1],
+    ["Chives, raw",    30,   3.3,   4.4,   0.7],
+    ["Cilantro / coriander leaf, raw",    23,   2.1,   3.7,   0.5],
+    ["Parsley, raw",    36,   3.0,   6.3,   0.8],
+    ["Basil, fresh",    23,   3.2,   2.6,   0.6],
+    ["Mint, fresh",    44,   3.3,   8.5,   0.7],
+    ["Dill, fresh",    43,   3.5,   7.0,   1.1],
+    ["Rosemary, fresh",   131,   3.3,  20.7,   5.9],
+    ["Thyme, fresh",   101,   5.6,  24.5,   1.7],
+    ["Oregano, fresh",   265,  11.0,  68.9,   4.3],
+    ["Ginger root, raw",    80,   1.8,  17.8,   0.8],
+    ["Turmeric, ground",   354,   7.8,  64.9,   9.9],
+    ["Jalapeño, raw",    29,   0.9,   6.5,   0.4],
+    ["Serrano pepper, raw",    32,   1.7,   6.7,   0.4],
+    ["Habanero pepper, raw",    36,   1.1,   8.8,   0.4],
+    ["Anaheim pepper, raw",    19,   1.0,   4.2,   0.2],
+    ["Banana pepper, raw",    27,   1.7,   5.4,   0.3],
+    ["Sun-dried tomato",   258,  14.1,  55.8,   3.0],
+    ["Tomato, cherry, raw",    18,   0.9,   3.9,   0.2],
+    ["Tomato, grape, raw",    18,   0.9,   3.9,   0.2],
+    ["Tomato, roma, raw",    18,   0.9,   3.9,   0.2],
+    ["Tomato paste",    82,   4.3,  18.9,   0.5],
+    ["Tomato, canned diced",    20,   1.0,   4.4,   0.1],
+    ["Navy beans, cooked",   140,   8.2,  26.1,   0.6],
+    ["Great northern beans, cooked",   118,   8.3,  21.1,   0.5],
+    ["Lima beans, cooked",   115,   7.8,  20.9,   0.4],
+    ["Fava beans, cooked",   110,   7.6,  19.7,   0.4],
+    ["Cannellini beans, cooked",   130,   8.9,  23.1,   0.5],
+    ["Adzuki beans, cooked",   128,   7.5,  24.8,   0.1],
+    ["Black-eyed peas, cooked",   116,   7.7,  20.8,   0.5],
+    ["Mung beans, cooked",   105,   7.0,  19.2,   0.4],
+    ["Soybeans, cooked",   173,  16.6,   9.9,   9.0],
+    ["Tempeh",   193,  18.5,  10.9,  10.8],
+    ["Seitan",   370,  75.0,   7.5,   4.5],
+    ["Tofu, extra firm",    83,   9.9,   1.0,   4.8],
+    ["Edamame, in shell",    96,   8.9,   9.0,   3.8],
+    ["Miso, white",   199,  11.7,  26.5,   6.0],
+    ["Natto",   211,  17.7,  12.0,  11.0],
+    ["Lentils, red, cooked",   116,   8.9,  19.9,   0.4],
+    ["Lentils, green, cooked",   116,   9.0,  20.1,   0.4],
+    ["Pea protein powder",   391,  80.0,   6.0,   6.5],
+    ["Split peas, cooked",   118,   8.3,  21.1,   0.4],
+    ["Acai berry, raw",    70,   1.5,   4.0,   5.0],
+    ["Apricot, raw",    48,   1.4,  11.1,   0.4],
+    ["Blackberries, raw",    43,   1.4,   9.6,   0.5],
+    ["Boysenberries, raw",    43,   1.0,  10.2,   0.2],
+    ["Cantaloupe, raw",    34,   0.8,   8.2,   0.2],
+    ["Clementine, raw",    47,   0.9,  12.0,   0.2],
+    ["Coconut meat, raw",   354,   3.3,  15.2,  33.5],
+    ["Coconut meat, dried",   660,   7.0,  24.0,  64.5],
+    ["Cranberries, raw",    46,   0.4,  12.2,   0.1],
+    ["Currants, black, raw",    63,   1.4,  15.4,   0.4],
+    ["Dates, dried",   282,   2.5,  75.0,   0.4],
+    ["Dragon fruit, raw",    60,   1.2,  13.0,   0.4],
+    ["Durian, raw",   147,   1.5,  27.1,   5.3],
+    ["Elderberries, raw",    73,   0.7,  18.4,   0.5],
+    ["Figs, fresh",    74,   0.8,  19.2,   0.3],
+    ["Figs, dried",   249,   3.3,  63.9,   0.9],
+    ["Gooseberries, raw",    44,   0.9,  10.2,   0.6],
+    ["Guava, raw",    68,   2.6,  14.3,   1.0],
+    ["Honeydew melon, raw",    36,   0.5,   9.1,   0.1],
+    ["Jackfruit, raw",    95,   1.7,  23.3,   0.6],
+    ["Kiwi, raw",    61,   1.1,  14.7,   0.5],
+    ["Kumquat, raw",    71,   1.9,  15.9,   0.9],
+    ["Lychee, raw",    66,   0.8,  16.5,   0.4],
+    ["Mandarin orange, raw",    53,   0.8,  13.3,   0.3],
+    ["Nectarine, raw",    44,   1.1,  10.6,   0.3],
+    ["Papaya, raw",    43,   0.5,  10.8,   0.3],
+    ["Passion fruit, raw",    97,   2.2,  23.4,   0.7],
+    ["Persimmon, raw",    70,   0.6,  18.6,   0.2],
+    ["Plum, raw",    46,   0.7,  11.4,   0.3],
+    ["Pomegranate seeds",    83,   1.7,  18.7,   1.2],
+    ["Pomelo, raw",    38,   0.8,   9.6,   0.0],
+    ["Prickly pear, raw",    41,   0.7,   9.6,   0.5],
+    ["Prunes / dried plums",   240,   2.2,  63.9,   0.4],
+    ["Raisins",   299,   3.1,  79.2,   0.5],
+    ["Dried cranberries, sweetened",   308,   0.1,  82.3,   1.1],
+    ["Dried apricots",   241,   3.4,  62.6,   0.5],
+    ["Dried mango",   319,   2.4,  78.0,   1.2],
+    ["Dried pineapple",   346,   2.5,  85.5,   0.8],
+    ["Star fruit / carambola, raw",    31,   1.0,   6.7,   0.3],
+    ["Tamarind, raw",   239,   2.8,  62.5,   0.6],
+    ["Tangerine, raw",    53,   0.8,  13.3,   0.3],
+    ["Ugli fruit, raw",    45,   0.8,  11.2,   0.1],
+    ["Breadfruit, cooked",   119,   1.2,  30.9,   0.2],
+    ["Plantain chips",   519,   2.6,  57.5,  31.5],
+    ["Fruit salad, canned in juice",    50,   0.5,  13.0,   0.1],
+    ["Almonds, blanched",   576,  21.3,  19.7,  50.6],
+    ["Almonds, roasted",   598,  21.0,  22.2,  52.5],
+    ["Almond butter",   614,  21.0,  19.0,  55.5],
+    ["Almond flour",   571,  21.4,  21.4,  50.0],
+    ["Brazil nuts",   659,  14.3,  12.3,  67.1],
+    ["Macadamia nuts",   718,   7.9,  13.8,  75.8],
+    ["Pecans",   691,   9.2,  13.9,  72.0],
+    ["Pine nuts",   673,  13.7,  13.1,  68.4],
+    ["Hazelnuts",   628,  15.0,  16.7,  60.8],
+    ["Hemp seeds",   553,  31.6,   8.7,  48.8],
+    ["Pumpkin seeds, roasted",   574,  29.8,  14.7,  49.0],
+    ["Sesame seeds",   573,  17.7,  23.5,  49.7],
+    ["Poppy seeds",   525,  17.9,  28.1,  41.6],
+    ["Black sesame seeds",   573,  17.7,  23.5,  49.7],
+    ["Tahini / sesame paste",   595,  17.0,  21.2,  53.8],
+    ["Peanut flour, defatted",   327,  52.2,  28.8,   0.6],
+    ["Walnut oil",   884,   0.0,   0.0, 100.0],
+    ["Almond oil",   884,   0.0,   0.0, 100.0],
+    ["Hazelnut oil",   884,   0.0,   0.0, 100.0],
+    ["Sesame oil",   884,   0.0,   0.0, 100.0],
+    ["Peanut oil",   884,   0.0,   0.0, 100.0],
+    ["Flaxseed oil",   884,   0.0,   0.0, 100.0],
+    ["MCT oil",   830,   0.0,   0.0,  93.0],
+    ["Ghee",   876,   0.3,   0.0,  99.8],
+    ["Lard",   898,   0.0,   0.0, 100.0],
+    ["Shortening, vegetable",   884,   0.0,   0.0, 100.0],
+    ["White sugar",   387,   0.0, 100.0,   0.0],
+    ["Brown sugar",   377,   0.0,  97.3,   0.0],
+    ["Powdered sugar",   389,   0.0,  99.8,   0.0],
+    ["Agave nectar",   310,   0.1,  76.0,   0.3],
+    ["Molasses",   290,   0.0,  74.7,   0.1],
+    ["Corn syrup, light",   282,   0.0,  76.1,   0.0],
+    ["Stevia, pure",     0,   0.0,   0.9,   0.0],
+    ["Erythritol",    20,   0.0, 100.0,   0.0],
+    ["Xylitol",   240,   0.0, 100.0,   0.0],
+    ["Cocoa powder, unsweetened",   228,  19.6,  57.9,  13.7],
+    ["Chocolate chips, semisweet",   512,   5.2,  63.0,  30.0],
+    ["Chocolate chips, white",   561,   6.5,  59.2,  33.0],
+    ["Baking powder",    53,   0.0,  27.7,   0.0],
+    ["Baking soda",     0,   0.0,   0.0,   0.0],
+    ["Vanilla extract",   288,   0.1,  12.7,   0.1],
+    ["Coconut sugar",   375,   0.0,  97.0,   0.0],
+    ["Date syrup",   304,   1.5,  75.0,   0.2],
+    ["Rice syrup",   318,   0.3,  78.0,   0.0],
+    ["Caramel sauce",   367,   2.6,  67.7,  12.1],
+    ["Nutella / chocolate hazelnut spread",   541,   6.0,  57.5,  30.9],
+    ["Almond butter, raw",   614,  21.0,  19.0,  55.5],
+    ["Sunflower butter",   594,  20.0,  16.5,  52.5],
+    ["Cashew butter",   587,  17.0,  28.0,  49.5],
+    ["Grapefruit juice",    39,   0.5,   9.2,   0.1],
+    ["Pineapple juice",    53,   0.4,  12.9,   0.1],
+    ["Cranberry juice, sweetened",    46,   0.1,  12.2,   0.1],
+    ["Grape juice",    60,   0.4,  14.9,   0.1],
+    ["Tomato juice",    17,   0.8,   4.2,   0.1],
+    ["Carrot juice",    40,   0.9,   9.3,   0.2],
+    ["Beet juice",    44,   1.7,  10.0,   0.2],
+    ["Celery juice",    17,   0.7,   3.0,   0.2],
+    ["Green juice, prepared",    42,   2.0,   8.0,   0.5],
+    ["Lemonade",    40,   0.1,  10.5,   0.1],
+    ["Limeade",    39,   0.0,  10.5,   0.0],
+    ["Coconut water",    19,   0.7,   3.7,   0.2],
+    ["Sports drink, Gatorade",    26,   0.0,   6.8,   0.0],
+    ["Energy drink, avg",    45,   0.5,  11.0,   0.0],
+    ["Coffee, cold brew, black",     4,   0.5,   0.5,   0.0],
+    ["Coffee, espresso",    12,   0.6,   1.4,   0.0],
+    ["Coffee, cappuccino, whole milk",    56,   3.2,   5.5,   2.2],
+    ["Coffee, flat white, whole milk",    65,   3.5,   4.8,   3.5],
+    ["Coffee, americano, black",     5,   0.3,   0.7,   0.0],
+    ["Coffee, frappuccino, avg",   159,   2.0,  29.0,   4.5],
+    ["Coffee, mocha, whole milk",   110,   3.5,  14.0,   4.5],
+    ["Coffee, macchiato",    26,   1.5,   2.6,   1.0],
+    ["Matcha latte, whole milk",    95,   4.0,   9.0,   4.5],
+    ["Green tea, unsweetened",     1,   0.2,   0.0,   0.0],
+    ["Black tea, unsweetened",     1,   0.0,   0.3,   0.0],
+    ["Herbal tea, unsweetened",     2,   0.0,   0.5,   0.0],
+    ["Chai tea latte, whole milk",   120,   4.0,  17.5,   3.5],
+    ["Hot chocolate, whole milk",   120,   3.8,  18.5,   3.8],
+    ["Beer, regular lager",    43,   0.5,   3.6,   0.0],
+    ["Beer, light",    29,   0.3,   1.6,   0.0],
+    ["Beer, stout",    49,   0.4,   5.3,   0.0],
+    ["Beer, IPA",    59,   0.5,   5.0,   0.0],
+    ["Wine, red",    85,   0.1,   2.6,   0.0],
+    ["Wine, white",    82,   0.1,   2.6,   0.0],
+    ["Wine, rosé",    83,   0.1,   3.0,   0.0],
+    ["Wine, sparkling / Champagne",    77,   0.3,   1.4,   0.0],
+    ["Spirits, vodka 80 proof",   231,   0.0,   0.0,   0.0],
+    ["Spirits, whiskey 80 proof",   231,   0.0,   0.0,   0.0],
+    ["Spirits, rum 80 proof",   231,   0.0,   0.0,   0.0],
+    ["Spirits, gin 80 proof",   263,   0.0,   0.0,   0.0],
+    ["Spirits, tequila 80 proof",   231,   0.0,   0.0,   0.0],
+    ["Margarita, prepared",   271,   0.5,  17.5,   0.1],
+    ["Bloody Mary, prepared",    65,   0.8,   5.5,   0.2],
+    ["Piña colada, prepared",   245,   0.8,  25.0,   5.0],
+    ["Mojito, prepared",   136,   0.1,  18.5,   0.1],
+    ["Kombucha, plain",    14,   0.0,   3.0,   0.0],
+    ["Kefir water, plain",    19,   0.1,   4.7,   0.0],
+    ["Smoothie, fruit, store-bought",    63,   0.7,  14.5,   0.3],
+    ["Protein smoothie, prepared",   155,  18.5,  12.5,   2.5],
+    ["Meal replacement shake, avg",   175,  15.0,  18.0,   4.5],
+    ["Casein protein powder",   352,  75.0,   7.2,   2.0],
+    ["Egg white protein powder",   371,  78.0,   4.8,   1.5],
+    ["Collagen peptides powder",   354,  90.0,   0.0,   0.0],
+    ["BCAA powder",   390,  80.0,   0.0,   0.0],
+    ["Creatine powder",     0,   0.0,   0.0,   0.0],
+    ["Pre-workout powder, avg",    20,   0.5,   3.5,   0.0],
+    ["Mass gainer shake, avg",   380,  28.0,  56.0,   5.0],
+    ["Greek yogurt, high protein",    90,  15.0,   5.5,   0.5],
+    ["Cottage cheese, high protein",    85,  13.5,   2.8,   2.0],
+    ["Skyr, plain",    67,  11.0,   4.0,   0.2],
+    ["Quark, plain",    62,   8.5,   4.0,   0.3],
+    ["Beef jerky, peppered",   409,  32.5,  11.5,  25.0],
+    ["Turkey jerky",   323,  39.5,  15.0,   8.0],
+    ["Salmon jerky",   265,  37.0,  12.0,   7.5],
+    ["Pork rinds / chicharrones",   544,  61.3,   0.0,  32.5],
+    ["String cheese, mozzarella",   283,  24.0,   3.5,  19.0],
+    ["Babybel cheese",   323,  21.0,   0.0,  26.5],
+    ["Rice crackers, plain",   380,   6.5,  84.0,   1.0],
+    ["Veggie chips",   520,   5.0,  55.0,  31.5],
+    ["Baked chips, potato",   390,   5.0,  69.0,  12.0],
+    ["Multigrain chips",   467,   7.0,  66.0,  18.5],
+    ["Pita chips, baked",   400,  10.5,  59.0,  13.5],
+    ["Popcorn, microwave, butter",   455,   9.0,  53.0,  23.5],
+    ["Popcorn, kettle",   388,  11.0,  67.5,  10.0],
+    ["Cheez-Its, crackers",   493,  10.0,  57.0,  25.0],
+    ["Goldfish crackers",   473,  10.0,  63.0,  19.5],
+    ["RITZ crackers",   500,   7.0,  62.5,  23.5],
+    ["Triscuits",   400,  10.0,  62.5,  12.5],
+    ["Wheat Thins",   430,   8.5,  67.0,  14.0],
+    ["Pork cracklings",   544,  61.3,   0.0,  32.5],
+    ["Edamame, dry roasted",   490,  38.0,  30.0,  25.0],
+    ["Chickpeas, dry roasted",   444,  20.0,  56.5,  13.0],
+    ["Broad beans, roasted",   447,  27.0,  60.0,   5.0],
+    ["Mixed nuts, salted",   607,  14.5,  23.5,  52.5],
+    ["Trail mix, with M&Ms",   484,  11.0,  55.5,  25.0],
+    ["Dried fruit and nut mix",   429,   8.0,  61.5,  18.5],
+    ["Yogurt covered raisins",   393,   4.0,  73.0,  12.5],
+    ["Fruit snacks / gummies",   330,   1.5,  81.5,   0.5],
+    ["Veggie straw snacks",   528,   4.5,  61.5,  28.0],
+    ["Gummy bears",   330,   5.5,  80.0,   0.0],
+    ["Gummy worms",   325,   4.5,  80.0,   0.0],
+    ["Sour candy / Sour Patch Kids",   345,   0.0,  87.0,   0.0],
+    ["Hard candy / lollipop",   396,   0.0,  98.0,   0.0],
+    ["Jelly beans",   367,   0.0,  93.0,   0.1],
+    ["Skittles",   413,   0.0,  91.5,   4.5],
+    ["M&Ms, plain",   491,   4.5,  71.0,  21.0],
+    ["Reese's Peanut Butter Cups",   521,  10.0,  58.0,  30.0],
+    ["Snickers bar",   488,   8.0,  58.5,  25.0],
+    ["Kit Kat bar",   518,   6.0,  63.5,  26.0],
+    ["Twix bar",   495,   5.0,  65.0,  24.0],
+    ["Almond Joy",   489,   5.0,  58.5,  27.0],
+    ["Three Musketeers",   429,   3.0,  73.5,  15.0],
+    ["Milky Way",   469,   5.0,  67.0,  19.5],
+    ["Butterfinger",   475,   6.5,  71.0,  20.0],
+    ["Caramel candy",   380,   2.5,  71.5,  11.0],
+    ["Fudge, chocolate",   411,   3.0,  73.5,  13.0],
+    ["Peanut brittle",   461,  10.5,  68.5,  17.5],
+    ["Marshmallows",   318,   1.8,  81.0,   0.2],
+    ["Candy corn",   380,   0.0,  95.0,   0.0],
+    ["Tootsie Roll",   388,   2.0,  87.0,   6.0],
+    ["Licorice, red",   349,   3.0,  81.0,   1.0],
+    ["Chocolate fudge",   405,   2.5,  70.0,  14.0],
+    ["Halvah",   529,  12.5,  60.0,  29.5],
+    ["Marzipan",   467,  10.0,  61.0,  21.5],
+    ["Chocolate cake, with frosting",   371,   4.5,  53.5,  16.5],
+    ["Vanilla cake, with frosting",   376,   3.5,  57.0,  15.5],
+    ["Carrot cake, with frosting",   373,   3.8,  51.5,  17.5],
+    ["Red velvet cake",   378,   4.0,  54.0,  16.5],
+    ["Cheesecake, plain",   321,   5.5,  25.5,  22.5],
+    ["Cheesecake, New York style",   325,   5.5,  27.5,  22.5],
+    ["Pound cake",   385,   5.8,  48.0,  19.5],
+    ["Angel food cake",   258,   6.4,  57.8,   0.2],
+    ["Lemon pound cake",   391,   4.8,  52.0,  19.0],
+    ["Banana bread",   326,   5.0,  53.5,  11.0],
+    ["Zucchini bread",   327,   4.5,  47.5,  14.5],
+    ["Pumpkin bread",   303,   4.5,  51.5,  10.0],
+    ["Apple pie",   237,   2.2,  34.0,  10.8],
+    ["Pumpkin pie",   227,   4.0,  30.5,  10.8],
+    ["Pecan pie",   423,   5.0,  61.5,  19.5],
+    ["Cherry pie",   261,   2.5,  37.0,  11.5],
+    ["Blueberry pie",   253,   2.5,  37.0,  11.0],
+    ["Lemon meringue pie",   265,   2.0,  50.0,   7.5],
+    ["Strawberry shortcake",   292,   4.0,  43.5,  12.0],
+    ["Chocolate mousse",   259,   4.5,  21.5,  17.5],
+    ["Crème brûlée",   195,   3.5,  19.0,  12.0],
+    ["Profiteroles",   349,   9.0,  28.5,  22.0],
+    ["Eclair",   275,   6.0,  27.5,  15.0],
+    ["Baklava",   428,   7.5,  48.0,  24.5],
+    ["Churros",   375,   5.0,  48.5,  19.0],
+    ["Funnel cake",   381,   6.0,  47.5,  19.5],
+    ["Beignets",   430,   7.0,  56.0,  20.5],
+    ["Crepes with Nutella",   320,   6.5,  40.0,  14.5],
+    ["Waffles with syrup and butter",   315,   7.5,  49.0,  10.5],
+    ["Frozen meal, chicken rice broccoli",   118,   9.5,  11.5,   3.5],
+    ["Frozen meal, beef and vegetables",    96,   8.5,   9.5,   2.5],
+    ["Frozen meal, mac and cheese",   163,   5.5,  22.5,   6.0],
+    ["Frozen meal, turkey dinner",   108,   7.5,  13.5,   2.5],
+    ["Frozen pizza, pepperoni",   259,  11.0,  27.5,  12.0],
+    ["Frozen burrito, bean cheese",   217,   7.5,  30.0,   8.0],
+    ["Frozen lasagna",   130,   8.0,  13.5,   5.0],
+    ["Tater tots, frozen, baked",   177,   2.0,  23.0,   8.5],
+    ["Fish sticks, frozen, baked",   195,  11.5,  17.5,   8.0],
+    ["Chicken strips, frozen, baked",   217,  17.5,  13.0,   9.5],
+    ["Frozen edamame",   109,  11.0,   8.5,   4.5],
+    ["Frozen peas and carrots",    50,   2.8,   9.0,   0.2],
+    ["Frozen broccoli, cooked",    35,   2.4,   6.6,   0.4],
+    ["Frozen corn, cooked",    86,   3.0,  20.2,   0.8],
+    ["Frozen spinach, cooked",    22,   2.7,   3.5,   0.2],
+    ["Frozen mixed vegetables, cooked",    60,   2.5,  12.8,   0.2],
+    ["Ice pop / popsicle",    60,   0.1,  15.4,   0.1],
+    ["Frozen fruit bar",    73,   0.5,  18.0,   0.5],
+    ["Klondike bar",   290,   4.0,  33.5,  16.5],
+    ["Ice cream sandwich",   217,   3.5,  33.0,   8.0],
+    ["Drumstick ice cream cone",   298,   4.5,  40.5,  14.0],
+    ["Canned chicken breast",   132,  26.0,   0.0,   3.0],
+    ["Canned ham",   163,  21.0,   0.0,   8.4],
+    ["SPAM, classic",   309,  13.3,   3.1,  26.4],
+    ["Vienna sausages, canned",   252,  11.2,   1.1,  22.5],
+    ["Chili with beans, canned",   101,   6.5,  10.5,   3.5],
+    ["Pork and beans, canned",   130,   6.0,  23.5,   1.5],
+    ["Tomato bisque, canned",    60,   1.5,   9.5,   2.0],
+    ["Chicken broth, low sodium",    15,   1.8,   1.5,   0.5],
+    ["Beef broth",    17,   2.5,   1.0,   0.5],
+    ["Vegetable broth",    12,   0.5,   2.5,   0.0],
+    ["Coconut milk, canned, full fat",   197,   2.0,   6.0,  21.3],
+    ["Coconut cream, canned",   330,   3.1,   6.8,  34.7],
+    ["Tomatoes, diced, canned",    20,   1.0,   4.4,   0.1],
+    ["Tomatoes, crushed, canned",    32,   1.6,   6.4,   0.5],
+    ["Olives, black, canned",   115,   0.8,   6.3,  10.9],
+    ["Olives, green, canned",   145,   1.0,   3.8,  15.3],
+    ["Roasted red peppers, canned",    25,   1.0,   5.0,   0.5],
+    ["Jalapeños, pickled, canned",    17,   0.7,   3.7,   0.2],
+    ["Sauerkraut, canned",    20,   0.9,   4.3,   0.1],
+    ["Pickles, dill",    11,   0.4,   2.3,   0.2],
+    ["Pickles, bread and butter",    68,   0.4,  17.3,   0.2],
+    ["Relish, sweet pickle",    91,   0.3,  22.5,   0.2],
+    ["Capers, canned",    23,   2.4,   4.9,   0.9],
+    ["Anchovies, canned",   210,  29.0,   0.0,   9.7],
+    ["Crab meat, canned",    82,  17.4,   0.0,   1.0],
+    ["Clams, canned",   148,  25.5,   5.1,   2.0],
+    ["Sour cream, fat-free",    66,   5.0,   9.3,   0.0],
+    ["Cream cheese, light",   200,   8.5,   5.5,  16.5],
+    ["Whipped butter",   643,   0.5,   0.0,  72.0],
+    ["Margarine",   717,   0.2,   0.2,  80.7],
+    ["Cooking spray, avg",   820,   0.0,   0.0,  91.0],
+    ["Nutritional yeast",   325,  50.0,  37.0,   5.0],
+    ["Brewer's yeast",   105,  12.5,  13.3,   0.8],
+    ["Gelatin, unflavored",   335,  85.6,   0.0,   0.1],
+    ["Arrowroot starch",   357,   0.3,  88.2,   0.1],
+    ["Tapioca starch",   358,   0.0,  88.7,   0.0],
+    ["Cornstarch",   381,   0.3,  91.3,   0.1],
+    ["Bread flour",   361,  13.5,  72.5,   1.5],
+    ["All-purpose flour, white",   364,  10.3,  76.3,   1.0],
+    ["Whole wheat flour",   340,  13.2,  72.0,   2.5],
+    ["Coconut flour",   399,  19.3,  60.0,  14.5],
+    ["Oat flour",   404,  14.7,  65.7,   9.0],
+    ["Chickpea flour",   387,  22.4,  57.8,   6.7],
+    ["Cake flour",   362,   8.0,  79.8,   1.0],
+    ["Self-rising flour",   354,   9.7,  74.9,   1.0],
+    ["Panko breadcrumbs",   393,   9.7,  80.6,   3.6],
+    ["Beyond Burger, cooked",   274,  19.5,   8.5,  18.5],
+    ["Impossible Burger, cooked",   258,  19.0,  10.5,  16.5],
+    ["Plant-based sausage, cooked",   200,  17.0,   7.0,  12.0],
+    ["Plant-based bacon, cooked",   183,  13.0,  12.0,   9.0],
+    ["Plant-based chicken, cooked",   187,  18.5,   7.5,  10.0],
+    ["Plant-based ground beef",   218,  17.5,   8.0,  12.5],
+    ["Vegan cheese, cheddar style",   298,   4.5,  16.5,  23.5],
+    ["Oat milk, barista",    55,   1.7,   7.5,   2.0],
+    ["Cashew milk, unsweetened",    19,   0.4,   1.3,   1.3],
+    ["Hemp milk, unsweetened",    36,   2.0,   1.0,   2.5],
+    ["Coconut yogurt, plain",    85,   1.0,   9.5,   5.0],
+    ["Almond yogurt, plain",    68,   2.5,   8.0,   3.0],
+    ["Soy yogurt, plain",    66,   3.0,   9.0,   1.5],
+    ["Vegan butter",   717,   0.5,   0.0,  80.0],
+    ["Vegan mayo",   680,   0.5,   2.0,  72.0],
+    ["Jackfruit, canned in brine",    35,   1.5,   8.5,   0.1],
+    ["Mushroom, lion's mane",    35,   2.5,   6.5,   0.3],
+    ["Mushroom, shiitake, cooked",    56,   1.6,  14.3,   0.2],
+    ["Mushroom, portobello, cooked",    29,   3.0,   5.1,   0.5],
+    ["Mushroom, oyster, raw",    33,   3.3,   6.1,   0.4],
+    ["Cauliflower rice, raw",    25,   2.0,   5.3,   0.3],
+    ["Zucchini noodles / zoodles",    17,   1.2,   3.1,   0.3],
+    ["Spaghetti squash, cooked",    31,   0.6,   6.9,   0.6],
+    ["Hearts of palm, canned",    36,   2.7,   5.7,   0.4],
+    ["Instant oatmeal, plain",   352,  12.0,  68.5,   6.5],
+    ["Instant oatmeal, maple brown sugar",   371,   8.0,  76.0,   5.0],
+    ["Cream of rice, cooked",    71,   1.4,  16.0,   0.1],
+    ["Grits, quick, cooked",    71,   1.7,  15.7,   0.4],
+    ["Bread, pita, white, toasted",   298,   9.5,  59.0,   1.5],
+    ["Breadstick, plain",   415,  11.5,  72.5,   7.5],
+    ["Croutons, plain",   407,  11.0,  72.0,  10.0],
+    ["Stuffing, prepared",   178,   3.7,  21.7,   8.6],
+    ["Cornbread dressing",   212,   5.0,  27.5,   9.5],
+    ["Injera, Ethiopian flatbread",   137,   5.6,  26.6,   0.8],
+    ["Fufu / pounded yam",   118,   1.5,  27.9,   0.2],
+    ["Plantain fufu",   120,   1.2,  29.5,   0.3],
+    ["Ugali / cornmeal porridge",    89,   2.0,  21.0,   0.3],
+    ["Jollof rice, prepared",   165,   4.5,  27.5,   4.5],
+    ["Suya, beef kebab",   275,  26.0,   4.5,  16.5],
+    ["Pho broth, beef, prepared",    25,   3.0,   2.0,   0.5],
+    ["Kimchi, prepared",    15,   1.1,   2.4,   0.5],
+    ["Sauerkraut, prepared",    19,   0.9,   4.3,   0.1],
+    ["Miso soup, prepared, low sodium",    25,   2.0,   3.0,   0.5],
+    ["Borscht, prepared",    51,   2.5,   7.5,   1.5],
+    ["Pierogi, potato cheese, cooked",   193,   5.5,  27.0,   7.0],
+    ["Colcannon, prepared",    97,   2.0,  13.5,   4.5],
+    ["Cottage pie, prepared",   112,   7.5,   9.5,   4.5],
+    ["Welsh rarebit",   261,  12.5,  13.5,  17.5],
+    ["Haggis, cooked",   295,  18.0,  13.5,  17.5],
+    ["Scotch egg",   244,  14.5,   9.5,  16.5],
+    ["Bangers and mash",   164,   8.0,  14.0,   8.5],
+    ["Full English breakfast, avg",   309,  18.5,  16.5,  19.0],
+    ["Empanada, beef, baked",   265,  12.5,  28.0,  11.0],
+    ["Pupusa, corn, cheese",   256,   9.0,  33.0,  10.0],
+    ["Arepa, corn",   228,   5.0,  38.5,   5.5],
+    ["Ceviche, shrimp",    79,   9.5,   5.5,   1.5],
+    ["Fried plantains, sweet",   171,   1.0,  38.5,   4.0],
+    ["Tostones, fried",   210,   1.5,  31.0,   9.5],
+    ["Mofongo, prepared",   213,   4.0,  34.0,   8.0],
+    ["Ropa vieja, prepared",   175,  20.0,   5.0,   8.0],
+    ["Cuban rice and beans",   162,   5.5,  29.0,   2.5],
+    ["Jerk chicken, prepared",   211,  26.0,   4.5,   9.5],
+    ["Patties, Jamaican beef",   256,  10.0,  24.5,  12.5],
+    ["Poutine, prepared",   289,   9.5,  33.0,  14.0],
+    ["Tourtière, prepared",   269,  14.5,  16.5,  16.0],
+    ["Smoothie, green, prepared",    53,   1.5,   9.0,   1.5],
+    ["Smoothie, berry, prepared",    61,   1.0,  12.5,   1.0],
+    ["Smoothie, tropical, prepared",    68,   0.8,  15.0,   0.8],
+    ["Bone broth, beef",    40,   8.0,   0.5,   0.5],
+    ["Bone broth, chicken",    38,   7.5,   0.5,   0.5],
+    ["Collagen broth",    35,   8.0,   0.5,   0.0],
+    ["Meal prep chicken and rice",   132,  14.0,  12.0,   3.0],
+    ["Meal prep turkey and sweet potato",   124,  13.0,  12.5,   2.5],
+    ["Meal prep salmon and quinoa",   195,  18.0,  12.5,   7.0],
+    ["Meal prep beef and vegetables",   155,  16.0,  10.0,   5.0],
   ];
 
   // Pre-build word index at startup for O(1) lookups
@@ -2801,8 +3124,8 @@
       .sort((a, b) => sc[b] - sc[a])
       .slice(0, 8)
       .map(i => {
-        const [name, cals, protein, carbs, fat, serving_g, serving_label] = _FOODS[i];
-        return { name, cals, protein, carbs, fat, serving_g, serving_label };
+        const [name, cals, protein, carbs, fat] = _FOODS[i];
+        return { name, cals, protein, carbs, fat, serving_g: null, serving_label: 'per 100g' };
       });
   }
 
@@ -2815,20 +3138,32 @@
     foodSearchTimer = setTimeout(() => searchFoodDB(), 120);
   }
 
-  function searchFoodDB() {
+  async function searchFoodDB() {
     const q = document.getElementById('food-search-input').value.trim();
     if (!q) return;
     const resultsEl = document.getElementById('food-search-results');
     resultsEl.classList.add('visible');
 
-    const hits = _queryDB(q);
+    // Show custom DB hits immediately
+    const _customHits = searchCustomDB(q);
+    resultsEl.innerHTML = '';
+    if (_customHits.length) {
+      _customHits.forEach(f => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.innerHTML = `<div class="sri-name">${f.name}<span class="custom-db-badge">MY DB</span></div>
+          <div class="sri-meta"><span>${f.cals} kcal</span><span>${f.protein}g protein</span><span>${f.carbs}g carbs</span><span>${f.fat}g fat</span><span style="opacity:.5">1 serving = ${f.serving_label}</span></div>`;
+        item.onclick = () => fillFoodFromSearch(f.name, f.cals, f.protein, f.carbs, f.fat, f.serving_g, f.serving_label);
+        resultsEl.appendChild(item);
+      });
+    }
 
-    if (!hits.length) {
-      resultsEl.innerHTML = '<div class="search-status">No match \u2014 try a simpler term (e.g. "chicken") or fill in manually below.</div>';
+    const hits = _queryDB(q);
+    if (!hits.length && !_customHits.length) {
+      resultsEl.innerHTML = '<div class="search-status">No match \u2014 try a simpler term or fill in manually below.</div>';
       return;
     }
 
-    resultsEl.innerHTML = '';
     hits.forEach(f => {
       const item = document.createElement('div');
       item.className = 'search-result-item';
@@ -2839,30 +3174,34 @@
           <span>${(+f.protein).toFixed(1)}g protein</span>
           <span>${(+f.carbs).toFixed(1)}g carbs</span>
           <span>${(+f.fat).toFixed(1)}g fat</span>
-          <span style="color:var(--muted);opacity:0.55">${f.serving_label}</span>
+          <span style="color:var(--muted);opacity:0.55">per 100g</span>
         </div>`;
       item.onclick = () => fillFoodFromSearch(
-        f.name,
-        Math.round(f.cals),
-        (+f.protein).toFixed(1),
-        (+f.carbs).toFixed(1),
-        (+f.fat).toFixed(1),
-        f.serving_g,
-        f.serving_label
+        f.name, Math.round(f.cals), (+f.protein).toFixed(1),
+        (+f.carbs).toFixed(1), (+f.fat).toFixed(1), null, null
       );
       resultsEl.appendChild(item);
     });
   }
 
-  function fillFoodFromSearch(name, cals, protein, carbs, fat, serving_g, serving_label) {
+  function fillFoodFromSearch(name, cals, protein, carbs, fat, servingG, servingLabel) {
     document.getElementById('food-name').value    = name;
     document.getElementById('food-cals').value    = cals;
     document.getElementById('food-protein').value = protein;
     document.getElementById('food-carbs').value   = carbs;
     document.getElementById('food-fat').value     = fat;
-    document.getElementById('food-qty').value     = serving_g || 100;
-    document.getElementById('food-serving-info').textContent = serving_label ? '1 serving = ' + serving_label + ' (' + (serving_g||100) + 'g)' : '100g base';
-    document.getElementById('food-serving-info').style.display = 'block';
+    document.getElementById('food-qty').value     = '1';
+    window._currentServingG     = servingG  || null;
+    window._currentServingLabel = servingLabel || null;
+    const hint = document.getElementById('qty-serving-hint');
+    if (hint) {
+      if (servingLabel && servingLabel !== 'per 100g') {
+        hint.textContent = `1 serving = ${servingLabel}${servingG ? ' (' + servingG + 'g)' : ''}`;
+        hint.style.display = 'block';
+      } else {
+        hint.style.display = 'none';
+      }
+    }
     document.getElementById('food-autofill-notice').classList.add('visible');
     hideFoodResults();
     document.getElementById('food-search-input').value = '';
