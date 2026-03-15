@@ -8,119 +8,7 @@
 <meta name="theme-color" content="#0e0e0e">
 <title>FUEL — Calorie Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js">
-  // ─── CUSTOM FOOD DATABASE ────────────────────────────────────────
-  function loadCustomDB(){ try{ return JSON.parse(localStorage.getItem('fuel_custom_db')||'[]'); }catch{ return []; } }
-  function saveCustomDB(db){ localStorage.setItem('fuel_custom_db', JSON.stringify(db)); }
-
-  function saveToCustomDB() {
-    const name    = document.getElementById('food-name').value.trim();
-    const cals    = parseFloat(document.getElementById('food-cals').value)    || 0;
-    const protein = parseFloat(document.getElementById('food-protein').value) || 0;
-    const carbs   = parseFloat(document.getElementById('food-carbs').value)   || 0;
-    const fat     = document.getElementById('food-fat').value.trim();
-
-    if (!name)  { showToast('Enter a food name first.'); return; }
-    if (!cals)  { showToast('Enter calories first.'); return; }
-    if (!document.getElementById('food-protein').value.trim()) { showToast('Enter protein (can be 0).'); return; }
-    if (!document.getElementById('food-carbs').value.trim())   { showToast('Enter carbs (can be 0).'); return; }
-    if (!fat)   { showToast('Enter fat (can be 0).'); return; }
-
-    const servingG = window._currentServingG || 100;
-    const servingLabel = window._currentServingLabel || '100g';
-
-    const db = loadCustomDB();
-    // Check for duplicate name
-    const existing = db.findIndex(e => e.name.toLowerCase() === name.toLowerCase());
-    const entry = {
-      name, cals, protein,
-      carbs:   parseFloat(document.getElementById('food-carbs').value) || 0,
-      fat:     parseFloat(fat) || 0,
-      serving_g: servingG,
-      serving_label: servingLabel,
-      saved: Date.now()
-    };
-    if (existing >= 0) {
-      db[existing] = entry;
-      showToast(`"${name}" updated in My Database`);
-    } else {
-      db.push(entry);
-      showToast(`"${name}" saved to My Database`);
-    }
-    saveCustomDB(db);
-  }
-
-  // Merge custom DB into search results (prepend matching)
-  const _origQueryDB = typeof _queryDB !== 'undefined' ? _queryDB : null;
-
-  function searchCustomDB(q) {
-    const db = loadCustomDB();
-    if (!db.length || !q) return [];
-    const ql = q.toLowerCase();
-    return db.filter(e => e.name.toLowerCase().includes(ql)).slice(0, 4);
-  }
-
-  // ─── EDIT MODAL ──────────────────────────────────────────────────
-  let _editMeal = null;
-  let _editId   = null;
-
-  function openEditModal(meal, id) {
-    // Find the entry
-    const entries = (data[currentDate] && data[currentDate][meal]) || [];
-    const entry = entries.find(f => f.id === id);
-    if (!entry) return;
-
-    _editMeal = meal;
-    _editId   = id;
-
-    document.getElementById('edit-name').value    = entry.name;
-    document.getElementById('edit-cals').value    = entry.cals;
-    document.getElementById('edit-protein').value = entry.protein;
-    document.getElementById('edit-carbs').value   = entry.carbs;
-    document.getElementById('edit-fat').value     = entry.fat;
-
-    document.getElementById('edit-modal-overlay').classList.add('active');
-  }
-
-  function closeEditModal(e) {
-    // If called from overlay click, only close if clicking the backdrop itself
-    if (e && e.target !== document.getElementById('edit-modal-overlay')) return;
-    document.getElementById('edit-modal-overlay').classList.remove('active');
-    _editMeal = null;
-    _editId   = null;
-  }
-
-  function saveEditEntry() {
-    if (!_editMeal || !_editId) return;
-    const entries = data[currentDate] && data[currentDate][_editMeal];
-    if (!entries) return;
-    const idx = entries.findIndex(f => f.id === _editId);
-    if (idx < 0) return;
-
-    const name    = document.getElementById('edit-name').value.trim();
-    const cals    = parseFloat(document.getElementById('edit-cals').value)    || 0;
-    const protein = parseFloat(document.getElementById('edit-protein').value) || 0;
-    const carbs   = parseFloat(document.getElementById('edit-carbs').value)   || 0;
-    const fat     = parseFloat(document.getElementById('edit-fat').value)     || 0;
-
-    if (!name) { showToast('Name cannot be empty.'); return; }
-
-    entries[idx] = { ...entries[idx], name, cals, protein, carbs, fat };
-    saveData();
-    render();
-    document.getElementById('edit-modal-overlay').classList.remove('active');
-    _editMeal = null; _editId = null;
-    showToast('Entry updated');
-  }
-
-  function deleteEditEntry() {
-    if (!_editMeal || !_editId) return;
-    deleteFood(_editMeal, _editId);
-    document.getElementById('edit-modal-overlay').classList.remove('active');
-    _editMeal = null; _editId = null;
-  }
-
-  </script>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 <style>
   :root {
     --bg: #0e0e0e;
@@ -3287,6 +3175,116 @@
 
   // ─── INIT ─────────────────────────────────────────────────────
   render();
+
+
+// ─── CUSTOM FOOD DATABASE ────────────────────────────────────────
+  function loadCustomDB(){ try{ return JSON.parse(localStorage.getItem('fuel_custom_db')||'[]'); }catch{ return []; } }
+  function saveCustomDB(db){ localStorage.setItem('fuel_custom_db', JSON.stringify(db)); }
+
+  function saveToCustomDB() {
+    const name    = document.getElementById('food-name').value.trim();
+    const cals    = parseFloat(document.getElementById('food-cals').value)    || 0;
+    const protein = parseFloat(document.getElementById('food-protein').value) || 0;
+    const carbs   = parseFloat(document.getElementById('food-carbs').value)   || 0;
+    const fat     = document.getElementById('food-fat').value.trim();
+
+    if (!name)  { showToast('Enter a food name first.'); return; }
+    if (!cals)  { showToast('Enter calories first.'); return; }
+    if (!document.getElementById('food-protein').value.trim()) { showToast('Enter protein (can be 0).'); return; }
+    if (!document.getElementById('food-carbs').value.trim())   { showToast('Enter carbs (can be 0).'); return; }
+    if (!fat)   { showToast('Enter fat (can be 0).'); return; }
+
+    const servingG = window._currentServingG || 100;
+    const servingLabel = window._currentServingLabel || '100g';
+
+    const db = loadCustomDB();
+    // Check for duplicate name
+    const existing = db.findIndex(e => e.name.toLowerCase() === name.toLowerCase());
+    const entry = {
+      name, cals, protein,
+      carbs:   parseFloat(document.getElementById('food-carbs').value) || 0,
+      fat:     parseFloat(fat) || 0,
+      serving_g: servingG,
+      serving_label: servingLabel,
+      saved: Date.now()
+    };
+    if (existing >= 0) {
+      db[existing] = entry;
+      showToast(`"${name}" updated in My Database`);
+    } else {
+      db.push(entry);
+      showToast(`"${name}" saved to My Database`);
+    }
+    saveCustomDB(db);
+  }
+
+  function searchCustomDB(q) {
+    const db = loadCustomDB();
+    if (!db.length || !q) return [];
+    const ql = q.toLowerCase();
+    return db.filter(e => e.name.toLowerCase().includes(ql)).slice(0, 4);
+  }
+
+  // ─── EDIT MODAL ──────────────────────────────────────────────────
+  let _editMeal = null;
+  let _editId   = null;
+
+  function openEditModal(meal, id) {
+    // Find the entry
+    const entries = (data[currentDate] && data[currentDate][meal]) || [];
+    const entry = entries.find(f => f.id === id);
+    if (!entry) return;
+
+    _editMeal = meal;
+    _editId   = id;
+
+    document.getElementById('edit-name').value    = entry.name;
+    document.getElementById('edit-cals').value    = entry.cals;
+    document.getElementById('edit-protein').value = entry.protein;
+    document.getElementById('edit-carbs').value   = entry.carbs;
+    document.getElementById('edit-fat').value     = entry.fat;
+
+    document.getElementById('edit-modal-overlay').classList.add('active');
+  }
+
+  function closeEditModal(e) {
+    // If called from overlay click, only close if clicking the backdrop itself
+    if (e && e.target !== document.getElementById('edit-modal-overlay')) return;
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null;
+    _editId   = null;
+  }
+
+  function saveEditEntry() {
+    if (!_editMeal || !_editId) return;
+    const entries = data[currentDate] && data[currentDate][_editMeal];
+    if (!entries) return;
+    const idx = entries.findIndex(f => f.id === _editId);
+    if (idx < 0) return;
+
+    const name    = document.getElementById('edit-name').value.trim();
+    const cals    = parseFloat(document.getElementById('edit-cals').value)    || 0;
+    const protein = parseFloat(document.getElementById('edit-protein').value) || 0;
+    const carbs   = parseFloat(document.getElementById('edit-carbs').value)   || 0;
+    const fat     = parseFloat(document.getElementById('edit-fat').value)     || 0;
+
+    if (!name) { showToast('Name cannot be empty.'); return; }
+
+    entries[idx] = { ...entries[idx], name, cals, protein, carbs, fat };
+    saveData();
+    render();
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null; _editId = null;
+    showToast('Entry updated');
+  }
+
+  function deleteEditEntry() {
+    if (!_editMeal || !_editId) return;
+    deleteFood(_editMeal, _editId);
+    document.getElementById('edit-modal-overlay').classList.remove('active');
+    _editMeal = null; _editId = null;
+  }
+
 </script>
 </body>
 </html>
